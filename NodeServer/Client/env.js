@@ -1,0 +1,1 @@
+export const SERVER_ADD = "http://localhost:3000";
