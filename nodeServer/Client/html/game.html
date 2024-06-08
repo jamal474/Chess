@@ -14,7 +14,7 @@
   <link rel="stylesheet" href="../css/personal.css">
   <link rel="stylesheet" href="../css/personalTable.css">
   <link rel="stylesheet" href="../css/aichat.css">
-  <link rel="stylesheet" href="../css/watch.css">
+  <!-- <link rel="stylesheet" href="../css/watch.css"> -->
   <link rel="stylesheet"
     href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@48,600,0,0" />
   <link rel="stylesheet"
@@ -32,10 +32,40 @@
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/simple-notify@1.0.4/dist/simple-notify.css" />
   <script src="https://cdn.jsdelivr.net/npm/simple-notify@1.0.4/dist/simple-notify.min.js"></script>
   <script src="https://Conv-AI.github.io/web-sdk-cdn/convai-client.js"></script>
-  <script src = "https://kit.fontawesome.com/51cc5029e0.js" crossorigin = "anonymous"></script>
+  <script src="https://kit.fontawesome.com/51cc5029e0.js" crossorigin="anonymous"></script>
 </head>
 
-<body>
+<body onload = "includeHTML()">
+
+  <script>
+    function includeHTML() {
+      var z, i, elmnt, file, xhttp;
+      /*loop through a collection of all HTML elements:*/
+      z = document.getElementsByTagName("*");
+      for (i = 0; i < z.length; i++) {
+        elmnt = z[i];
+        /*search for elements with a certain atrribute:*/
+        file = elmnt.getAttribute("w3-include-html");
+        if (file) {
+          /*make an HTTP request using the attribute value as the file name:*/
+          xhttp = new XMLHttpRequest();
+          xhttp.onreadystatechange = function () {
+            if (this.readyState == 4) {
+              if (this.status == 200) { elmnt.innerHTML = this.responseText; }
+              if (this.status == 404) { elmnt.innerHTML = "Page not found."; }
+              /*remove the attribute, and call this function once more:*/
+              elmnt.removeAttribute("w3-include-html");
+              includeHTML();
+            }
+          }
+          xhttp.open("GET", file, true);
+          xhttp.send();
+          /*exit the function:*/
+          return;
+        }
+      }
+    };
+  </script>
 
   <!-- Navigation Bar -->
 
@@ -108,21 +138,21 @@
   <div class="container">
     <h1> C H E S S </h1>
 
-    <!-- Timer -->
-    <div class="timerContainer"> 
-      <div id="time"> 
-          <span class="digit" id="hr"> 
-              00</span> 
-          <span class="txt">Hr</span> 
-          <span class="digit" id="min"> 
-              00</span> 
-          <span class="txt">Min</span> 
-          <span class="digit" id="sec"> 
-              00</span> 
-          <span class="txt">Sec</span>
-      </div> 
-  </div>
-
+    <div w3-include-html="watch.html"></div>
+    <!-- Timer
+    <div class="timerContainer">
+      <div id="time">
+        <span class="digit" id="hr">
+          00</span>
+        <span class="txt">Hr</span>
+        <span class="digit" id="min">
+          00</span>
+        <span class="txt">Min</span>
+        <span class="digit" id="sec">
+          00</span>
+        <span class="txt">Sec</span>
+      </div>
+    </div> -->
     <ul>
     </ul>
   </div>
@@ -321,9 +351,9 @@
 
   <!-- Popup : AI Chat Box -->
   <div id="popup-aichat" class="modal">
-    <div class = "chatBox">
+    <div class="chatBox">
       <span class="closeAiChat" style="font-size: 50px;">&times;</span>
-      <div class = "chatHeader">
+      <div class="chatHeader">
         <h2>ConvAI chat</h2>
         <Button class="resetAiChat" onclick="reset()">Reset</Button>
       </div>
@@ -353,6 +383,9 @@
       </div>
     </div>
   </div>
+  <!-- <script>
+    includeHTML();
+  </script> -->
 
   <!-- Scripts -->
   <script src="/socket.io/socket.io.js"></script>
@@ -361,8 +394,8 @@
   <script src="../js/navbar.js"></script>
   <script src="../js/sign.js"></script>
   <script src="../js/utils.js"></script>
-  <script src = "../js/constants.js"></script>
-  <script src = "../js/aichat.js"></script>
+  <script src="../js/constants.js"></script>
+  <script src="../js/aichat.js"></script>
   <script type="module" src="../js/voice.js"></script>
   <!-- <script type="module" src="../js/graph.js"></script> -->
 </body>
