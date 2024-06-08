@@ -120,6 +120,7 @@ class NodeCppHandler
         console.log("in send request:",request);
 
         // Send a POST request with JSON data
+        //this.axios.post(`http://${process.env.SERVER_IP}:${process.env.C_PORT}`, request)10.211.55.3
         this.axios.post(`http://${process.env.SERVER_IP}:${process.env.C_PORT}`, request)
         .then(response => {
         // Handle response from the backend

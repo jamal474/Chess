@@ -104,7 +104,7 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>C:\SDK\boost\boost_1_84_0;C:\SDK\json-develop\include</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>Y:\boost\boost_1_84_0;Y:\nlohmann_json\include</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>

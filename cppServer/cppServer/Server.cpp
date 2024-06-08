@@ -9,7 +9,9 @@ Server::Server(
 )
 {
     game = new Game();
-    std::cout << "GAME RESET" << game->game_map.size() << std::endl;
+    //boost::asio::ip::tcp::endpoint endpoint(boost::asio::ip::address::from_string("192.168.1.1"), 8080);
+    ip::address add = ip::tcp::endpoint(ip::tcp::v4(),port).address();
+    std::cout <<" "<<add.to_string()<< " " << "GAME RESET" << game->game_map.size() << std::endl;
 
     start_accept(game);
 
