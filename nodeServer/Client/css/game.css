@@ -6,6 +6,7 @@
 }
 
 @import url(https://fonts.googleapis.com/css?family=Exo:100);
+
 /* Background data (Original source: https://subtlepatterns.com/grid-me/) */
 /* Animations */
 @-webkit-keyframes bg-scrolling-reverse {
@@ -13,41 +14,49 @@
     background-position: 50px 50px;
   }
 }
+
 @-moz-keyframes bg-scrolling-reverse {
   100% {
     background-position: 50px 50px;
   }
 }
+
 @-o-keyframes bg-scrolling-reverse {
   100% {
     background-position: 50px 50px;
   }
 }
+
 @keyframes bg-scrolling-reverse {
   100% {
     background-position: 50px 50px;
   }
 }
+
 @-webkit-keyframes bg-scrolling {
   0% {
     background-position: 50px 50px;
   }
 }
+
 @-moz-keyframes bg-scrolling {
   0% {
     background-position: 50px 50px;
   }
 }
+
 @-o-keyframes bg-scrolling {
   0% {
     background-position: 50px 50px;
   }
 }
+
 @keyframes bg-scrolling {
   0% {
     background-position: 50px 50px;
   }
 }
+
 /* Main styles */
 body {
 
@@ -65,7 +74,7 @@ body {
   /* Opera 12+ */
   animation: bg-scrolling-reverse 4s infinite;
   /* IE 10+ */
-  -webkit-animation-timing-function:step-start;
+  -webkit-animation-timing-function: step-start;
   -moz-animation-timing-function: linear;
   -o-animation-timing-function: linear;
   animation-timing-function: linear;
@@ -75,23 +84,13 @@ body {
   overflow-x: hidden;
   background-color: rgb(0, 0, 0);
   height: 100vh;
-  margin-left: 10%;
-  margin-top: -1.2%;
+  width : 95vw;
+  margin: 20px auto 20px auto;
   overflow: hidden;
 }
+/* "Libre Baskerville" */
 
-h3{
-  position: absolute;
-  top: 9.5%;
-  margin: 0px;
-  margin-left: 0.2%;
-font-size: 20px;
-font-family: "Libre Baskerville", serif;
-font-weight: 700;
-font-style: normal;
-}
-
-.copy-btn{
+.copy-btn {
   border: none;
   color: rgb(0, 0, 0);
   background-color: rgb(255, 255, 255);
@@ -382,16 +381,6 @@ label {
   text-decoration: none;
 }
 
-
-/* .modal {
-  position: fixed;
-  inset: 0;
-  background: rgba(8, 8, 8, 0.7);
-  display: none;
-  align-items: center;
-  justify-content: center;
-} */
-
 .content1 {
   position: relative;
   width: 500px;
@@ -410,8 +399,6 @@ label {
   background: white;
   padding: 1em 2em;
   border-radius: 40px;
-  /* background: #010101;
-  background: linear-gradient(90deg, #8d8d8d, #2f2f3f); */
 }
 
 .modal:target {

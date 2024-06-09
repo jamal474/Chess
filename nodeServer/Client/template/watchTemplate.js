@@ -1,3 +1,4 @@
+export const watchTemplate = `
 <!-- Timer -->
 <div class="timerContainer"> 
     <div id="time"> 
@@ -12,3 +13,4 @@
         <span class="txt">Sec</span>
     </div> 
 </div>
+`;
