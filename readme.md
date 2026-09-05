@@ -1,65 +1,90 @@
-## Server-Side :
+# Chess
 
-**Technology and Responsiblity:**
-- **Node.js** for Server implementation, this includes **socket.io** for client to Node Server communication.
-- **expressJS** for Rest API in node.js for **page serves, authentication routes and stats update routes**.
-- **C++**'s **Boost::Asio** was used for Game logic server (this is second server besides node). Only responsibility is to keep game state and provide logic behind all the chess functions.
-- **axios** 
-    - for sending http requests from Node server to Cpp server for game State updates and game logic.
-- **Firebase** - authentication is provided using firebase auth via email and password. Auth requests are made from client to server via **"/api/login"** or **"/api/register"**, and gets a user token (if authenticated) for subsequent requests.
+Two-player online chess. Three services:
 
-## Client-Side :
+- **client** — React + TypeScript + Tailwind 
+  Users create a room, share the code, and play.
+- **server** — Node + Express + socket.io. 
+- **cppServer** — Boost.Asio + nlohmann_json. Holds game state and validates
+  moves. Sources are split into `include/` and `src/`, grouped by layer
+  (`net/`, `engine/`, `engine/pieces/`, `common/`).
 
-**Technology and Responsiblity:** 
-- **HTML**, **CSS**, and **JS** were used for the frontend.
-- **socket.io** was also used in client to write emitters and listeners for to and fro from Node server.
-- **axios** was used for sending http requests from client to Node server for authentication and stats update.
-- **Auth :** Uses axios for making request for register and login.
-- **Database :** 
-    - Uses axios to make stats update in the case of checkmate and stalemate.
-    - Fetches leaderboard data and personal stats and renders them onto the window.
-- **Conv AI :** was used to provide users with an AI assistant that was configured to act as a chess grandmaster and help users with chess related queries.
 
----
-## Installation 
-from the base folder, for **C++ Server**,
+## Local development
+
+Prerequisites: Node 20+, npm, cmake, a C++17 compiler, Boost (`libboost-system-dev`
+or Boost on macOS/Windows), nlohmann/json.
+
+Build once:
 ```sh
-cd cppServer
+make build            # or: ./scripts/build.sh
 ```
-Open the project in Visual Studio, and run the program.
-
-On the Node side,from the base folder
+Run everything (three services in one shell):
 ```sh
-cd nodeServer
+make run              # or: ./scripts/run.sh
 ```
-Install the node modules required
+Open http://localhost:5173, create a room, open the same URL in another tab,
+paste the code, and play.
+
+Individual services:
+
 ```sh
-npm install
-```
-## Run
+# C++ engine
+cd cppServer && cmake -S . -B build && cmake --build build -j && ./build/chess_engine
 
-### Start the React frontend
-from the nodeServer folder,
+# Node relay
+cd server && npm install && npm run dev
+
+# React client
+cd client && npm install && npm run dev
+```
+
+## VM deployment (Docker)
+
+The whole stack ships as three containers wired together by Compose. Each
+service declares `restart: unless-stopped`, so services come back up on
+crash or reboot.
+
 ```sh
-npm start
+# On a fresh VM with Docker installed:
+git clone <this repo> chess && cd chess
+./scripts/deploy.sh    # docker compose build && up -d
 ```
-note:
-Node server - http://localhost:3000
-Cpp server - http://localhost:5000
 
-## Result
-we can now access the Game at the "http://localhost:3000" default address.
+Then browse to `http://<vm-ip>:8080`. Nginx inside the client container
+proxies `/socket.io/` to the node relay, so **the only port that has to
+be exposed to the public internet is 8080**.
 
-## Note
-In **Node Server** folder, 
-* **Client/js/utils.js** - environment variables for client
-* **.env** - environment varibles for server
+Container-level configuration (in `docker-compose.yml`):
 
-.env - 
-* **SERVER_IP** : should be set to required local IP, by default its localhost
-* **N_PORT** : port where node server is running, by default its 3000
-* **C_PORT** : port where c++ server is running, by default its 5000
+| Service      | Container port | Host port |
+|--------------|----------------|-----------|
+| client       | 80             | 8080      |
+| node-server  | 3000           | 3000 (for debug) |
+| cpp-engine   | 5000           | not exposed |
 
-Convai : is **voiceEnabled : true**, this works only when **SERVER_IP is localhost**. when its is set to ip's like "10.65.13.3" the default browser stops the audiocontext from creating. and thus the ai chat feature does not work.
+Useful commands:
+```sh
+docker compose ps          # what's running
+docker compose logs -f     # tail logs from all services
+docker compose down        # stop everything
+docker compose up -d --build   # rebuild + restart
+```
 
----
+## Ports & env vars
+
+Server (`server/.env`):
+```
+NODE_HOST=0.0.0.0
+NODE_PORT=3000
+CPP_HOST=localhost
+CPP_PORT=5000
+ALLOWED_ORIGINS=*
+```
+
+Client (build time — passed via `VITE_SERVER_URL` in the Dockerfile arg or a
+`client/.env` for `npm run dev`):
+```
+VITE_SERVER_URL=http://localhost:3000   # local dev
+# leave empty in production so it uses the origin nginx serves from
+```

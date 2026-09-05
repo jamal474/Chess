@@ -1,0 +1,86 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ---- Global type / body ---- */
+:root {
+  color-scheme: light;
+}
+body {
+  font-family: "Libre Baskerville", serif;
+}
+
+/* ---- Board square themes (ported from the original CSS) ---- */
+/* The pattern: `.theme-*-light` for the light squares of the theme,
+   `.theme-*-dark` for the dark squares. Board.tsx picks between the two
+   based on square parity. */
+
+.theme-default-dark { background-color: rgb(0, 0, 0); }
+.theme-default-light { background-color: rgb(255, 255, 255); }
+
+.theme-light-dark { background-color: #bbbbbb; }
+.theme-light-light { background-color: #ffffff; }
+
+.theme-dark-dark { background-color: #000000; }
+.theme-dark-light { background-color: #838383; }
+
+.theme-red-dark { background-color: #b33434; }
+.theme-red-light { background-color: #ffffff; }
+
+.theme-blue-dark { background-color: rgb(68, 107, 151); }
+.theme-blue-light { background-color: #85c4f8; }
+
+.theme-green-dark { background-color: #66805d; }
+.theme-green-light { background-color: rgb(174, 216, 111); }
+
+.theme-purple-dark { background-color: rgb(117, 77, 182); }
+.theme-purple-light { background-color: #bfb0e2fa; }
+
+.theme-magenta-dark { background-color: #cf3476; }
+.theme-magenta-light { background-color: #f49ac2; }
+
+.theme-orange-dark { background-color: #e4a451; }
+.theme-orange-light { background-color: #ffffff; }
+
+/* ---- Highlights over any theme ---- */
+.sq-move-highlight { background-color: #facc15 !important; }
+.sq-capture-highlight { background-color: #ef4444 !important; }
+.sq-recent { background-color: rgb(173, 216, 230) !important; }
+.sq-check { background-color: #dc2626 !important; }
+
+/* ---- Floating chess-piece background on the menu ---- */
+.floating {
+  position: absolute;
+  animation: floating 5s infinite linear;
+  pointer-events: none;
+  background-size: cover;
+  background-repeat: no-repeat;
+  background-position: center center;
+}
+.floating.king    { width: 72px; height: 72px; opacity: 0.65; background-image: url("/images/Bking.png"); }
+.floating.queen   { width: 80px; height: 80px; opacity: 0.75; background-image: url("/images/Wqueen.png"); }
+.floating.knight  { width: 60px; height: 60px; opacity: 0.55; background-image: url("/images/Wknight.png"); }
+.floating.rook    { width: 60px; height: 60px; opacity: 0.55; background-image: url("/images/Wrook.png"); }
+.floating.pawn    { width: 44px; height: 44px; opacity: 0.7;  background-image: url("/images/Bpawn.png"); }
+.floating.bishop  { width: 48px; height: 48px; opacity: 0.7;  background-image: url("/images/Wbishop.png"); }
+
+@keyframes floating {
+  0%   { transform: translateY(0%) rotate(-25deg); }
+  50%  { transform: translateY(120%) rotate(25deg); }
+  100% { transform: translateY(0%) rotate(-25deg); }
+}
+
+/* ---- Small helpers ---- */
+.material-symbols-outlined {
+  font-family: "Material Symbols Outlined";
+  font-weight: normal;
+  font-style: normal;
+  font-size: 24px;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  display: inline-block;
+  white-space: nowrap;
+  direction: ltr;
+  font-feature-settings: "liga";
+}

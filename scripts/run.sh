@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+# Run all three services locally, in the foreground, with each service's
+# output prefixed by [Cpp]/[Node]/[Client] (colored) so the interleaved
+# stream is readable. Ctrl-C stops everything.
+#
+# Env vars (with defaults):
+#   LOG_LEVEL      -- CHESS_LOG_LEVEL for the C++ engine (default INFO)
+#   NODE_PORT      -- node relay port                    (default 3000)
+#   CPP_PORT       -- C++ engine port                    (default 5000)
+#   CLIENT_PORT    -- vite dev port                      (default 5173)
+#
+# Usage:
+#   ./scripts/run.sh
+#   LOG_LEVEL=DEBUG ./scripts/run.sh
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+LOG_LEVEL="${LOG_LEVEL:-INFO}"
+NODE_PORT="${NODE_PORT:-3000}"
+CPP_PORT="${CPP_PORT:-5000}"
+CLIENT_PORT="${CLIENT_PORT:-5173}"
+
+# Prefix helper: line-buffers stdin and writes `[<name>] <line>` in a color.
+# Uses stdbuf to keep the child pipeline unbuffered so lines flush promptly.
+prefix() {
+    local color="$1"; local tag="$2"
+    # sed -u is unbuffered on GNU sed; on macOS BSD sed use `-l`. Fall back
+    # gracefully if neither is present.
+    if sed --version >/dev/null 2>&1; then
+        exec sed -u "s/^/$(printf '\033')[${color}m[${tag}]$(printf '\033')[0m /"
+    else
+        exec sed -l "s/^/$(printf '\033')[${color}m[${tag}]$(printf '\033')[0m /" 2>/dev/null \
+            || awk -v c="$color" -v t="$tag" '{printf "\033[%sm[%s]\033[0m %s\n", c, t, $0; fflush()}'
+    fi
+}
+
+cleanup() {
+    echo ""
+    echo "==> Shutting down..."
+    kill 0 2>/dev/null || true
+}
+trap cleanup EXIT INT TERM
+
+echo "==> LOG_LEVEL=$LOG_LEVEL, cpp:$CPP_PORT node:$NODE_PORT client:$CLIENT_PORT"
+
+# ---- C++ engine ---- (magenta prefix)
+(
+    exec env CHESS_ENGINE_PORT="$CPP_PORT" CHESS_LOG_LEVEL="$LOG_LEVEL" \
+        "$ROOT/cppServer/build/chess_engine"
+) 2>&1 | prefix "35" "Cpp   " &
+
+sleep 0.5
+
+# ---- Node relay ---- (cyan prefix)
+(
+    cd "$ROOT/server"
+    exec env CPP_HOST=localhost CPP_PORT="$CPP_PORT" NODE_PORT="$NODE_PORT" \
+        npm start --silent
+) 2>&1 | prefix "36" "Node  " &
+
+sleep 0.5
+
+# ---- React client ---- (yellow prefix)
+(
+    cd "$ROOT/client"
+    exec env VITE_SERVER_URL="http://localhost:$NODE_PORT" \
+        npm run dev --silent -- --port "$CLIENT_PORT"
+) 2>&1 | prefix "33" "Client" &
+
+echo ""
+echo "Services:"
+echo "  Client:  http://localhost:$CLIENT_PORT"
+echo "  Node:    http://localhost:$NODE_PORT"
+echo "  Cpp:     tcp://localhost:$CPP_PORT"
+echo ""
+echo "Ctrl-C to stop."
+wait

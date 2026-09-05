@@ -1,0 +1,60 @@
+# Full stack for a VM deployment:
+#   - cpp-engine: C++ chess game engine (Boost.Asio + nlohmann_json)
+#   - node-server: socket.io relay between clients and the engine
+#   - client: React SPA served by nginx (also proxies /socket.io/ to node)
+#
+# All three services declare `restart: unless-stopped` so they come back up
+# on VM reboot or a container crash. `docker compose up -d` on a fresh VM
+# is enough to run the whole thing.
+
+services:
+  cpp-engine:
+    build:
+      context: ./cppServer
+    container_name: chess-cpp-engine
+    restart: unless-stopped
+    environment:
+      CHESS_ENGINE_PORT: "5000"
+    expose:
+      - "5000"
+    networks:
+      - chessnet
+
+  node-server:
+    build:
+      context: ./server
+    container_name: chess-node-server
+    restart: unless-stopped
+    environment:
+      NODE_HOST: "0.0.0.0"
+      NODE_PORT: "3000"
+      CPP_HOST: "cpp-engine"
+      CPP_PORT: "5000"
+      ALLOWED_ORIGINS: "*"
+    depends_on:
+      - cpp-engine
+    ports:
+      # Direct-connect port (useful for debugging); nginx proxies for browsers.
+      - "3000:3000"
+    networks:
+      - chessnet
+
+  client:
+    build:
+      context: ./client
+      args:
+        # Empty means the client talks to whichever host it was loaded from
+        # (nginx proxies /socket.io/ to node-server on the private network).
+        VITE_SERVER_URL: ""
+    container_name: chess-client
+    restart: unless-stopped
+    depends_on:
+      - node-server
+    ports:
+      - "8080:80"
+    networks:
+      - chessnet
+
+networks:
+  chessnet:
+    driver: bridge

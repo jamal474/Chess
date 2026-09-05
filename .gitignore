@@ -1,4 +1,47 @@
-.vs
-cppServer/cppServer/x64
-cppServer/x64
-nodeServer/node_modules
+# ---- OS / editor ----
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+
+# ---- Visual Studio (kept for the C++ project's original workflow) ----
+.vs/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# ---- C++ build outputs ----
+x64/
+x86/
+Debug/
+Release/
+cppServer/build/
+cppServer/cppServer/x64/
+cppServer/cppServer/x86/
+cppServer/cppServer/Debug/
+cppServer/cppServer/Release/
+
+# ---- Node / npm ----
+**/node_modules/
+npm-debug.log*
+yarn-error.log*
+
+# ---- Vite / Tailwind build outputs ----
+client/dist/
+client/.vite/
+
+# ---- Environment files ----
+**/.env
+!**/.env.example
+
+# ---- Legacy scaffolding kept out of git so it can be removed later ----
+# (Nothing here yet; the old `nodeServer/` is still tracked while the port is
+# being validated. Delete it manually once the new stack is confirmed to work.)
+
+# ---- Old auth-era code, kept for reference. Ignored by git; delete when comfortable. ----
+_legacy/
+
+# Files moved aside for the user to delete manually (see readme).
+_to_delete/
