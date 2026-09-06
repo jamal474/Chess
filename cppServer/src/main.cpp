@@ -1,13 +1,13 @@
 //*********************************************************
 //
 // Entry point for the game.
-// Creates a server object; port is 5000 by default and can
+// Creates a Server object; port is 5000 by default and can
 // be overridden with the CHESS_ENGINE_PORT environment
 // variable (useful in containers / on a VM).
 //
 //*********************************************************
 
-#include <boost/asio.hpp>
+#include <asio.hpp>
 #include <cstdlib>
 #include <stdexcept>
 #include <string>
@@ -16,9 +16,7 @@
 #include "net/Conn_handler.h"
 #include "net/Server.h"
 
-namespace asio = boost::asio;
-namespace ip   = asio::ip;
-using namespace nlohmann;
+using json = nlohmann::json;
 
 int main(int /*argc*/, char* /*argv*/[]) {
     // Pick up CHESS_LOG_LEVEL early so subsequent LOG_* calls honour it.

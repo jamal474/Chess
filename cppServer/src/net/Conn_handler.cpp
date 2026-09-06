@@ -1,7 +1,7 @@
 #include "net/Conn_handler.h"
 #include "common/Logger.h"
 
-Conn_handler::Conn_handler(boost::asio::io_context& io_context, Game* game) : socket(io_context) {
+Conn_handler::Conn_handler(asio::io_context& io_context, Game* game) : socket(io_context) {
 
     // keeps the current game instance 
     // from previous connection to new
@@ -40,7 +40,7 @@ void Conn_handler::start()
 
     socket.async_read_some(
         asio::buffer(received_data, max_length),
-        [this, self](const boost::system::error_code& error, size_t bytesRead) {
+        [this, self](const std::error_code& error, size_t bytesRead) {
             if (!error) {
                 read_data(error, bytesRead);
             }
@@ -52,7 +52,7 @@ void Conn_handler::start()
 
 //--------------------------------------------------------------------------------------
 
-void Conn_handler::read_data(const boost::system::error_code& error, size_t bytesRead)
+void Conn_handler::read_data(const std::error_code& error, size_t bytesRead)
 {
     if (!error) {
         // Add the received data to the request queue
@@ -141,7 +141,7 @@ void Conn_handler::process_http_request(const std::string& request)
 
     }
     catch (const std::exception& e) {
-        std::cerr << "Error: " << e.what() << std::endl;
+        LOG_ERROR("Conn_handler", "request parse failed: " << e.what());
         // Send an error response or handle the error appropriately
     }
 }
@@ -150,20 +150,20 @@ void Conn_handler::process_http_request(const std::string& request)
 
 void Conn_handler::send_http_response(const std::string& response)
 {
-    std::cout << response << std::endl;
+    LOG_TRACE("Conn_handler", "sending " << response.size() << " bytes");
     auto self(shared_from_this());
     asio::async_write(
         socket,
         asio::buffer(response.data(), response.size()),
-        [this, self](const boost::system::error_code& error, std::size_t bytes_transferred) {
+        [this, self](const std::error_code& error, std::size_t bytes_transferred) {
             if (!error) {
                 // Response sent successfully
-                std::cout << "Response sent: " << std::endl;
+                LOG_TRACE("Conn_handler", "response sent (" << bytes_transferred << " bytes)");
 
             }
             else {
                 // Handle write error
-                std::cerr << "Error sending response: " << error.message() << std::endl;
+                LOG_ERROR("Conn_handler", "error sending response: " << error.message());
             }
         });
 }
@@ -215,7 +215,7 @@ void Conn_handler::delete_room(json req_data) {
 
 void Conn_handler::get_legal_moves(json req_data)
 {
-    std::cout << "GAME in get valid: size : " << game->game_map.size() << " " << req_data["room_id"] << std::endl;
+    LOG_DEBUG("Conn_handler", "get_valid_moves: game_map.size=" << game->game_map.size() << " room=" << req_data["room_id"]);
     Board* board = (*game)[req_data["room_id"]];
     json res_data = {};
 

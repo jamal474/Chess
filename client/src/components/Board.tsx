@@ -1,8 +1,18 @@
-import { useMemo } from "react";
-import type { BoardTheme, PlayerId, SquareId } from "../lib/types";
-import { PLAYER1 } from "../lib/types";
-import type { Piece } from "../lib/pieces";
-import { ownColor } from "../lib/pieces";
+import { useMemo, useState } from "react";
+import {
+  DndContext,
+  DragOverlay,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+  type DragStartEvent,
+} from "@dnd-kit/core";
+
+import { PLAYER1, type BoardTheme, type PlayerId, type SquareId } from "../lib/types";
+import { pieceKey, type Piece } from "../lib/pieces";
+import Square from "./Square";
+import ChessPiece, { ChessPieceOverlay } from "./ChessPiece";
 
 type Props = {
   playerId: PlayerId;
@@ -11,26 +21,18 @@ type Props = {
   highlightCaptures: SquareId[];
   recentMove: { from: SquareId; to: SquareId } | null;
   checkedKingSquare: SquareId | null;
-  selectedKey: string | null;              // "W-pawn1"
+  selectedKey: string | null;
   theme: BoardTheme;
   disabled: boolean;
-  onPieceSelect: (piece: Piece) => void;
+  onSelectPiece: (piece: Piece) => void;
   onSquareClick: (square: SquareId) => void;
-  onPieceDragStart: (piece: Piece) => void;
-  onDrop: (square: SquareId) => void;
+  onMoveByDrag: (piece: Piece, target: SquareId) => void;
 };
 
-// Build the 8 rows/8 cols order for the given player orientation.
-function rows(playerId: PlayerId): number[] {
-  return playerId === PLAYER1 ? [8, 7, 6, 5, 4, 3, 2, 1] : [1, 2, 3, 4, 5, 6, 7, 8];
-}
-function cols(playerId: PlayerId): number[] {
-  return playerId === PLAYER1 ? [1, 2, 3, 4, 5, 6, 7, 8] : [8, 7, 6, 5, 4, 3, 2, 1];
-}
-
-export function pieceKey(p: { color: "W" | "B"; id: string }) {
-  return `${p.color}-${p.id}`;
-}
+const rowsFor = (p: PlayerId): number[] =>
+  p === PLAYER1 ? [8, 7, 6, 5, 4, 3, 2, 1] : [1, 2, 3, 4, 5, 6, 7, 8];
+const colsFor = (p: PlayerId): number[] =>
+  p === PLAYER1 ? [1, 2, 3, 4, 5, 6, 7, 8] : [8, 7, 6, 5, 4, 3, 2, 1];
 
 export default function Board({
   playerId,
@@ -42,10 +44,9 @@ export default function Board({
   selectedKey,
   theme,
   disabled,
-  onPieceSelect,
+  onSelectPiece,
   onSquareClick,
-  onPieceDragStart,
-  onDrop,
+  onMoveByDrag,
 }: Props) {
   const bySquare = useMemo(() => {
     const m = new Map<SquareId, Piece>();
@@ -53,70 +54,137 @@ export default function Board({
     return m;
   }, [pieces]);
 
-  const myColor = ownColor(playerId);
+  const [dragged, setDragged] = useState<Piece | null>(null);
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } })
+  );
+
+  function onDragStart(e: DragStartEvent) {
+    const p = e.active.data.current?.piece as Piece | undefined;
+    if (p) {
+      setDragged(p);
+      onSelectPiece(p);
+    }
+  }
+  function onDragEnd(e: DragEndEvent) {
+    setDragged(null);
+    if (!e.over) return;
+    const target = String(e.over.id).replace(/^sq::/, "") as SquareId;
+    const piece = e.active.data.current?.piece as Piece | undefined;
+    if (piece) onMoveByDrag(piece, target);
+  }
+
+  const rows = rowsFor(playerId);
+  const cols = colsFor(playerId);
+
+  const LABEL = "18px";  // rank / file label track width
 
   return (
-    <div
-      className={`grid select-none border-4 border-black shadow-[0_20px_60px_rgba(0,0,0,0.45)] ${
-        disabled ? "pointer-events-none opacity-90" : ""
-      }`}
-      style={{ gridTemplateRows: "repeat(8, minmax(0, 1fr))", width: "min(88vh, 640px)", height: "min(88vh, 640px)" }}
-    >
-      {rows(playerId).map((row) => (
-        <div key={row} className="grid" style={{ gridTemplateColumns: "repeat(8, minmax(0, 1fr))" }}>
-          {cols(playerId).map((col) => {
-            const id: SquareId = `${row}${col}`;
-            const parity = (row + col) % 2;
-            const themeClass = parity === 0 ? `theme-${theme}-dark` : `theme-${theme}-light`;
-
-            const piece = bySquare.get(id);
-            const isRecent = recentMove && (recentMove.from === id || recentMove.to === id);
-            const isChecked = checkedKingSquare === id;
-            const isMove = highlightMoves.includes(id);
-            const isCap = highlightCaptures.includes(id);
-
-            const highlightClass = isCap
-              ? "sq-capture-highlight"
-              : isMove
-              ? "sq-move-highlight"
-              : isChecked
-              ? "sq-check"
-              : isRecent
-              ? "sq-recent"
-              : themeClass;
-
-            return (
-              <div
-                key={id}
-                className={`relative flex items-center justify-center transition-colors ${highlightClass}`}
-                onClick={() => onSquareClick(id)}
-                onDragOver={(e) => e.preventDefault()}
-                onDrop={() => onDrop(id)}
-              >
-                {piece && (
-                  <img
-                    src={piece.image}
-                    alt=""
-                    draggable={piece.color === myColor && !disabled}
-                    onClick={(e) => {
-                      if (piece.color === myColor) {
-                        e.stopPropagation();
-                        onPieceSelect(piece);
+    <DndContext sensors={sensors} onDragStart={onDragStart} onDragEnd={onDragEnd}>
+      <div
+        className={[
+          "w-full h-full flex flex-col border-3 border-black shadow-brut bg-black",
+          disabled ? "pointer-events-none opacity-95" : "",
+        ].join(" ")}
+      >
+        {/* Rank labels | 8x8 board | Rank labels */}
+        <div
+          className="flex-1 min-h-0 grid"
+          style={{ gridTemplateColumns: `${LABEL} 1fr ${LABEL}` }}
+        >
+          <RankLabels rows={rows} />
+          <div className="grid grid-rows-8 min-h-0">
+            {rows.map((row) => (
+              <div key={row} className="grid grid-cols-8 min-h-0">
+                {cols.map((col) => {
+                  const id: SquareId = `${row}${col}`;
+                  const parity: 0 | 1 = ((row + col) % 2) as 0 | 1;
+                  const piece = bySquare.get(id);
+                  const selected =
+                    Boolean(piece) && selectedKey === pieceKey(piece!);
+                  return (
+                    <Square
+                      key={id}
+                      id={id}
+                      parity={parity}
+                      theme={theme}
+                      isMove={highlightMoves.includes(id)}
+                      isCapture={highlightCaptures.includes(id)}
+                      isRecent={
+                        Boolean(recentMove) &&
+                        (recentMove!.from === id || recentMove!.to === id)
                       }
-                    }}
-                    onDragStart={() => {
-                      if (piece.color === myColor) onPieceDragStart(piece);
-                    }}
-                    className={`h-[80%] w-[80%] object-contain drop-shadow-md ${
-                      selectedKey === pieceKey(piece) ? "outline outline-2 outline-red-600" : ""
-                    }`}
-                  />
-                )}
+                      isCheck={checkedKingSquare === id}
+                      isSelected={selected}
+                      onClick={() => onSquareClick(id)}
+                    >
+                      {piece && (
+                        <ChessPiece
+                          piece={piece}
+                          draggable={
+                            !disabled &&
+                            piece.color === (playerId === PLAYER1 ? "W" : "B")
+                          }
+                          selected={selected}
+                          onSelect={() => onSelectPiece(piece)}
+                        />
+                      )}
+                    </Square>
+                  );
+                })}
               </div>
-            );
-          })}
+            ))}
+          </div>
+          <RankLabels rows={rows} align="right" />
+        </div>
+
+        <FileLabels cols={cols} labelW={LABEL} />
+      </div>
+
+      <DragOverlay dropAnimation={null}>
+        {dragged ? <ChessPieceOverlay piece={dragged} /> : null}
+      </DragOverlay>
+    </DndContext>
+  );
+}
+
+function RankLabels({
+  rows,
+  align = "left",
+}: {
+  rows: number[];
+  align?: "left" | "right";
+}) {
+  return (
+    <div
+      className={`grid grid-rows-8 text-white text-[10px] font-mono ${
+        align === "right" ? "text-right" : "text-left"
+      }`}
+    >
+      {rows.map((r) => (
+        <div key={r} className="flex items-center justify-center opacity-70">
+          {r}
         </div>
       ))}
+    </div>
+  );
+}
+
+function FileLabels({ cols, labelW }: { cols: number[]; labelW: string }) {
+  return (
+    <div
+      className="grid shrink-0"
+      style={{ gridTemplateColumns: `${labelW} 1fr ${labelW}` }}
+    >
+      <div />
+      <div className="grid grid-cols-8 text-white text-[10px] font-mono py-0.5">
+        {cols.map((c) => (
+          <div key={c} className="flex items-center justify-center opacity-70">
+            {String.fromCharCode(96 + c)}
+          </div>
+        ))}
+      </div>
+      <div />
     </div>
   );
 }

@@ -14,21 +14,21 @@ export default function Modal({
   if (!open) return null;
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
       onClick={onClose}
     >
       <div
-        className="relative w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl"
+        className="brut-lg w-full max-w-md p-6 bg-white"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="mb-3 flex items-center justify-between">
-          {title && <h2 className="text-xl font-bold">{title}</h2>}
+        <div className="mb-4 flex items-center justify-between border-b-3 border-black pb-3">
+          {title && <h2 className="font-display text-2xl leading-none">{title}</h2>}
           {onClose && (
             <button
               onClick={onClose}
-              className="text-2xl leading-none text-slate-500 hover:text-black"
+              className="text-2xl leading-none font-bold hover:bg-black hover:text-white px-2"
             >
-              ×
+              ✕
             </button>
           )}
         </div>

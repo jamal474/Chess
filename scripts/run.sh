@@ -4,7 +4,9 @@
 # stream is readable. Ctrl-C stops everything.
 #
 # Env vars (with defaults):
-#   LOG_LEVEL      -- CHESS_LOG_LEVEL for the C++ engine (default INFO)
+#   LOG_LEVEL      -- log level shared by all three services
+#                     (cpp: CHESS_LOG_LEVEL, node: LOG_LEVEL,
+#                      client: VITE_LOG_LEVEL). Default INFO.
 #   NODE_PORT      -- node relay port                    (default 3000)
 #   CPP_PORT       -- C++ engine port                    (default 5000)
 #   CLIENT_PORT    -- vite dev port                      (default 5173)
@@ -17,7 +19,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 LOG_LEVEL="${LOG_LEVEL:-INFO}"
 NODE_PORT="${NODE_PORT:-3000}"
-CPP_PORT="${CPP_PORT:-5000}"
+CPP_PORT="${CPP_PORT:-5050}"    # macOS AirPlay Receiver takes 5000
 CLIENT_PORT="${CLIENT_PORT:-5173}"
 
 # Prefix helper: line-buffers stdin and writes `[<name>] <line>` in a color.
@@ -55,6 +57,7 @@ sleep 0.5
 (
     cd "$ROOT/server"
     exec env CPP_HOST=localhost CPP_PORT="$CPP_PORT" NODE_PORT="$NODE_PORT" \
+        LOG_LEVEL="$LOG_LEVEL" \
         npm start --silent
 ) 2>&1 | prefix "36" "Node  " &
 
@@ -64,6 +67,7 @@ sleep 0.5
 (
     cd "$ROOT/client"
     exec env VITE_SERVER_URL="http://localhost:$NODE_PORT" \
+        VITE_LOG_LEVEL="$LOG_LEVEL" \
         npm run dev --silent -- --port "$CLIENT_PORT"
 ) 2>&1 | prefix "33" "Client" &
 
@@ -72,6 +76,9 @@ echo "Services:"
 echo "  Client:  http://localhost:$CLIENT_PORT"
 echo "  Node:    http://localhost:$NODE_PORT"
 echo "  Cpp:     tcp://localhost:$CPP_PORT"
+echo ""
+echo "  Tip: macOS reserves port 5000 for AirPlay Receiver. If you see"
+echo "       \"Address already in use\", pass CPP_PORT=<other port> to make run."
 echo ""
 echo "Ctrl-C to stop."
 wait

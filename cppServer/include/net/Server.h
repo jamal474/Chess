@@ -1,45 +1,34 @@
 #pragma once
 
-//********************************************************* 
-// 
-// Server implementation - this is an asynchronous server
-// it uses conn_handler class to make connection and make
-// it keeps the server listening to new requests after
-// request by creating a shared pointer for the conn_handler
-// object.
-// 
+//*********************************************************
+//
+// Server — Asio TCP acceptor. Owns the game state and keeps
+// itself listening between requests.
+//
 //*********************************************************
 
+#include <asio.hpp>
+#include <memory>
+#include <system_error>
 
+#include "engine/Game.h"
 #include "net/Conn_handler.h"
-#include <boost/asio.hpp>
-#include <boost/bind.hpp>
-#include <boost/enable_shared_from_this.hpp>
 
-namespace asio = boost::asio;
 namespace ip = asio::ip;
 
-class Server
-{
+class Server {
 private:
-
-    // Main game object should be created only once
-    // during the server lifetime, it keeps the state
-    // of all the active games.
-
+    // The main Game holds every active room. One per Server lifetime.
     Game* game;
 
     asio::io_context& io_context_;
     ip::tcp::acceptor acceptor_;
+
     void start_accept(Game*);
 
 public:
-    
     Server(asio::io_context&, int);
     ~Server();
-    
-    //async accept handler for connection
 
-    void handle_accept(Conn_handler::pointer, const boost::system::error_code&);
+    void handle_accept(Conn_handler::pointer, const std::error_code&);
 };
-

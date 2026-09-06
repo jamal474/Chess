@@ -11,10 +11,15 @@ services:
   cpp-engine:
     build:
       context: ./cppServer
+      # Override the compile-time log floor at build time, e.g.
+      #   docker compose build --build-arg CHESS_MIN_LOG_LEVEL=2
+      args:
+        CHESS_MIN_LOG_LEVEL: "0"
     container_name: chess-cpp-engine
     restart: unless-stopped
     environment:
       CHESS_ENGINE_PORT: "5000"
+      CHESS_LOG_LEVEL: "INFO"
     expose:
       - "5000"
     networks:

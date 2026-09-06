@@ -6,7 +6,7 @@ Server::Server(asio::io_context& io_context, int port)
       acceptor_(io_context, ip::tcp::endpoint(ip::tcp::v4(), port)) {
     game = new Game();
 
-    ip::address bound = ip::tcp::endpoint(ip::tcp::v4(), port).address();
+    const auto bound = ip::tcp::endpoint(ip::tcp::v4(), port).address();
     LOG_INFO("Server",
              "bound on " << bound.to_string() << ":" << port
                          << ", game_map size=" << game->game_map.size());
@@ -23,19 +23,21 @@ Server::~Server() {
 
 //--------------------------------------------------------------------------------------
 
-void Server::start_accept(Game* game) {
-    Conn_handler::pointer connection = Conn_handler::create(io_context_, game);
+void Server::start_accept(Game* g) {
+    auto connection = Conn_handler::create(io_context_, g);
 
+    // Lambda instead of boost::bind — modern Asio takes any callable.
     acceptor_.async_accept(
         connection->getSocket(),
-        boost::bind(&Server::handle_accept, this, connection,
-                    boost::asio::placeholders::error));
+        [this, connection](const std::error_code& err) {
+            handle_accept(connection, err);
+        });
 }
 
 //--------------------------------------------------------------------------------------
 
 void Server::handle_accept(Conn_handler::pointer connection,
-                           const boost::system::error_code& err) {
+                           const std::error_code& err) {
     if (!err) {
         LOG_DEBUG("Server", "client connected");
         connection->start();

@@ -1,5 +1,6 @@
 // Bridges the socket.io front-end with the C++ game-engine HTTP server.
 const axios = require("axios");
+const { log } = require("./logger");
 const { ID } = require("./utils");
 const { roomState } = require("./gameContext");
 
@@ -78,7 +79,7 @@ class NodeCppHandler {
       const { data } = await axios.post(CPP_URL, request, { timeout: 5000 });
       this.handleResponse(data);
     } catch (err) {
-      console.error(`[cpp] request ${request.req_id} failed:`, err.message);
+      log.error("cpp", `request ${request.req_id} failed: ${err.message}`);
     }
   }
 
@@ -95,12 +96,12 @@ class NodeCppHandler {
       case "resign":          return this.resignResponse(res);
       case "reset":           return this.resetResponse(res);
       case "pawn_promotion":  return this.pawnPromotionResponse(res);
-      default: console.warn("[cpp] unknown res_id:", res.res_id);
+      default: log.warn("cpp", `unknown res_id: ${res.res_id}`);
     }
   }
 
   createRoomResponse(res) {
-    if (res.status !== "SUCCESSFUL") return console.warn("[cpp] create_room failed");
+    if (res.status !== "SUCCESSFUL") return log.warn("cpp", "create_room failed");
     roomState[res.room_id].turn = ID.PLAYER1;
     roomState[res.room_id][ID.PLAYER1] = { moveMap: {}, alreadyPromotedPawns: [] };
     roomState[res.room_id][ID.PLAYER2] = { moveMap: {}, alreadyPromotedPawns: [] };
@@ -134,7 +135,7 @@ class NodeCppHandler {
       case "CHECK":      return this.io.to(res.room_id).emit("check", res.player_id);
       case "STALE_MATE": return this.io.to(res.room_id).emit("staleMate", res.player_id);
       case "NIL":        return;
-      default: console.warn("[cpp] unknown check_or_mate_status:", res.check_or_mate_status);
+      default: log.warn("cpp", `unknown check_or_mate_status: ${res.check_or_mate_status}`);
     }
   }
 

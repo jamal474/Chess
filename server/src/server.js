@@ -4,6 +4,7 @@ const express = require("express");
 const http = require("http");
 const cors = require("cors");
 const { Server } = require("socket.io");
+const { log } = require("./logger");
 
 const { ID } = require("./utils");
 const { roomMap, roomState } = require("./gameContext");
@@ -33,7 +34,7 @@ const io = new Server(server, {
 const nodeCppHandler = new NodeCppHandler(io);
 
 io.on("connection", (socket) => {
-  console.log("[io] connect", socket.id);
+  log.debug("io", `connect ${socket.id}`);
 
   // Client asks: does this room exist and has capacity for me?
   socket.on("roomExistsCheck", (joinRoomId, cb) => {
@@ -142,10 +143,10 @@ io.on("connection", (socket) => {
       const room = io.sockets.adapter.rooms.get(roomId);
       if (!room || room.size === 0) delete roomState[roomId];
     }
-    console.log("[io] disconnect", socket.id);
+    log.debug("io", `disconnect ${socket.id}`);
   });
 });
 
-server.listen(NODE_PORT, NODE_HOST, () =>
-  console.log(`chess-server listening on http://${NODE_HOST}:${NODE_PORT} (cpp: ${process.env.CPP_HOST || "localhost"}:${process.env.CPP_PORT || "5000"})`)
-);
+server.listen(NODE_PORT, NODE_HOST, () => {
+  log.info("server", `listening on http://${NODE_HOST}:${NODE_PORT} (cpp: ${process.env.CPP_HOST || "localhost"}:${process.env.CPP_PORT || "5000"})`);
+});

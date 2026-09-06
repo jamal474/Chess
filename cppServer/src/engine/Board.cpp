@@ -1,4 +1,5 @@
 #include "engine/Board.h"
+#include "common/Logger.h"
 
 
 Board::Board(std::string room_id)
@@ -49,7 +50,7 @@ Board::~Board()
     // Deallocat memory for player objects
     delete players[ID::PLAYER1];
     delete players[ID::PLAYER2];
-    std::cout << " Board memory is deallocated " << std::endl;
+    LOG_DEBUG("Board", "deallocated (room=" << room_id << ")");
 }
 
 //--------------------------------------------------------------------------------------
@@ -519,8 +520,7 @@ bool Board::if_check_after_move(std::pair<int, int> move, std::string player_id,
 
 void Board::print()
 {
-    std::cout << "HELLO" << std::endl;
-    std::cout << "game room id:" << room_id;
+    LOG_TRACE("Board", "print: room=" << room_id);
 }
 
 bool Board::can_castle_kingside(std::string player_id) {

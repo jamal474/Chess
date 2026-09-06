@@ -5,15 +5,17 @@ Two-player online chess. Three services:
 - **client** — React + TypeScript + Tailwind 
   Users create a room, share the code, and play.
 - **server** — Node + Express + socket.io. 
-- **cppServer** — Boost.Asio + nlohmann_json. Holds game state and validates
+- **cppServer** — standalone Asio + nlohmann_json (both header-only, fetched via Conan 2). Holds game state and validates
   moves. Sources are split into `include/` and `src/`, grouped by layer
   (`net/`, `engine/`, `engine/pieces/`, `common/`).
 
 
 ## Local development
 
-Prerequisites: Node 20+, npm, cmake, a C++17 compiler, Boost (`libboost-system-dev`
-or Boost on macOS/Windows), nlohmann/json.
+Prerequisites: Node 20+, npm, cmake, a C++17 compiler, Python 3, and
+**Conan 2** (`pip install "conan>=2.0"`). The C++ engine's Asio and
+nlohmann_json dependencies come from Conan Center — no system packages
+required.
 
 Build once:
 ```sh
@@ -88,3 +90,45 @@ Client (build time — passed via `VITE_SERVER_URL` in the Dockerfile arg or a
 VITE_SERVER_URL=http://localhost:3000   # local dev
 # leave empty in production so it uses the origin nginx serves from
 ```
+
+## macOS port 5000
+
+On macOS Monterey and later, AirPlay Receiver listens on port 5000 by
+default, so the C++ engine's local default port has been moved to
+**5050**. If you'd rather keep 5000, disable AirPlay Receiver under
+System Settings → General → AirDrop & Handoff, or pass
+`CPP_PORT=5000 make run`. In Docker the engine still binds 5000 inside
+the isolated container network — there's no collision there.
+
+## Package management (Conan 2)
+
+The C++ engine uses **Conan 2** for its two dependencies (Asio, nlohmann_json), both header-only.
+The recipe is a plain Python class in `cppServer/conanfile.py`, so you can read
+and tweak it like any other code:
+
+```python
+class ChessEngineConan(ConanFile):
+    requires = ("asio/1.30.2", "nlohmann_json/3.11.3")
+    generators = "CMakeToolchain", "CMakeDeps"
+```
+
+Both packages are header-only, so `conan install` fetches only tiny
+archives (a few MB total, no source builds) and the runtime image needs
+zero third-party system libraries.
+
+```sh
+# One-time on a fresh machine:
+pip install "conan>=2.0"
+conan profile detect --force
+
+# Then either:
+make build            # installs everything and does conan install for you
+# or manually:
+cd cppServer
+conan install . --output-folder=build --build=missing -s build_type=Release
+cmake -S . -B build -DCMAKE_TOOLCHAIN_FILE=build/conan_toolchain.cmake -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j
+```
+
+The Docker build handles Conan itself — `docker compose build cpp-engine`
+just works, no host Conan needed.

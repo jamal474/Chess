@@ -5,3 +5,7 @@ x64/
 *.vcxproj.filters
 *.vcxproj.user
 *.sln
+
+CMakeUserPresets.json
+.conan/
+conan.lock

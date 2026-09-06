@@ -12,41 +12,44 @@ export default function NavBar({ onOpenThemes, onReset, onLeave }: Props) {
     <div className="relative">
       <button
         onClick={() => setOpen((v) => !v)}
-        className="rounded-md bg-black p-2 text-white shadow-md hover:bg-slate-800"
+        className="btn btn-primary px-3 py-2"
         title="Menu"
       >
-        <span className="material-symbols-outlined">menu</span>
+        ☰ MENU
       </button>
       {open && (
-        <ul className="absolute left-0 mt-2 min-w-[220px] overflow-hidden rounded-md border border-black/30 bg-white shadow-xl z-40">
-          <li
-            className="cursor-pointer px-4 py-2 hover:bg-slate-100"
-            onClick={() => {
-              setOpen(false);
-              onOpenThemes();
-            }}
-          >
-            Board Theme
-          </li>
-          <li
-            className="cursor-pointer px-4 py-2 hover:bg-slate-100"
-            onClick={() => {
-              setOpen(false);
-              onReset();
-            }}
-          >
-            Restart Game
-          </li>
-          <li
-            className="cursor-pointer px-4 py-2 text-red-600 hover:bg-red-50"
-            onClick={() => {
-              setOpen(false);
-              onLeave();
-            }}
-          >
-            Leave to Menu
-          </li>
-        </ul>
+        <>
+          <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} />
+          <ul className="absolute left-0 mt-2 z-40 min-w-[220px] brut bg-white">
+            <li
+              className="cursor-pointer px-4 py-2 border-b-2 border-black label hover:bg-accent"
+              onClick={() => {
+                setOpen(false);
+                onOpenThemes();
+              }}
+            >
+              BOARD THEME
+            </li>
+            <li
+              className="cursor-pointer px-4 py-2 border-b-2 border-black label hover:bg-accent"
+              onClick={() => {
+                setOpen(false);
+                onReset();
+              }}
+            >
+              RESTART GAME
+            </li>
+            <li
+              className="cursor-pointer px-4 py-2 label hover:bg-black hover:text-white"
+              onClick={() => {
+                setOpen(false);
+                onLeave();
+              }}
+            >
+              LEAVE
+            </li>
+          </ul>
+        </>
       )}
     </div>
   );

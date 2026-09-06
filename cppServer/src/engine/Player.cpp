@@ -1,4 +1,5 @@
 #include "engine/Player.h"
+#include "common/Logger.h"
 
 Player::Player(std::string player_id)
 {
@@ -43,5 +44,5 @@ Player::~Player() {
     }
     // Clear the map
     piece_map.clear();
-    std::cout <<"Successfully deallocated Players objects "<<std::endl;
+    LOG_DEBUG("Player", "destructor: freed piece_map");
 }

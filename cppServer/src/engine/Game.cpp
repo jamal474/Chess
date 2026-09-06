@@ -1,4 +1,5 @@
 #include "engine/Game.h"
+#include "common/Logger.h"
 
 Game::Game()
 {
@@ -12,7 +13,7 @@ Game::~Game()
 	{
 		delete pair.second;
 	}
-	std::cout << "Game Destructor deleting Board objects " << std::endl;
+	LOG_DEBUG("Game", "destructor: cleaning up boards");
 }
 
 bool Game::create_room(std::string room_id)
@@ -28,9 +29,7 @@ bool Game::create_room(std::string room_id)
 	}
 	catch (const std::string& error)
 	{
-		std::cerr
-			<< error
-			<< std::endl;
+		LOG_WARN("Game", error);
 	}
 	return false;
 }
@@ -55,9 +54,7 @@ bool Game::delete_room(std::string room_id)
 	}
 	catch (const std::string& error)
 	{
-		std::cerr
-			<< error
-			<< std::endl;
+		LOG_WARN("Game", error);
 	}
 
 	return false;
@@ -82,7 +79,7 @@ bool Game::reset_room(std::string room_id)
 	}
 	catch (const std::string& error)
 	{
-		std::cerr << error << std::endl;
+		LOG_WARN("Game", error);
 	}
 	return false;
 }

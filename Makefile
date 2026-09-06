@@ -25,7 +25,12 @@ build:
 	./scripts/build.sh $(LOG_LEVEL)
 
 build-cpp:
-	cmake -S cppServer -B cppServer/build -DCMAKE_BUILD_TYPE=Release -DCHESS_MIN_LOG_LEVEL=$(LOG_LEVEL_NUM)
+	cd cppServer && (conan profile show >/dev/null 2>&1 || conan profile detect --force)
+	cd cppServer && conan install . --output-folder=build --build=missing -s build_type=Release
+	cmake -S cppServer -B cppServer/build \
+	    -DCMAKE_TOOLCHAIN_FILE=build/conan_toolchain.cmake \
+	    -DCMAKE_BUILD_TYPE=Release \
+	    -DCHESS_MIN_LOG_LEVEL=$(LOG_LEVEL_NUM)
 	cmake --build cppServer/build -j
 
 run:

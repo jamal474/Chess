@@ -5,11 +5,24 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-# Boost.Asio + Boost.System
-find_package(Boost REQUIRED COMPONENTS system)
-# nlohmann_json — packaged as libnlohmann-json3-dev on Debian/Ubuntu
-find_package(nlohmann_json 3.7 REQUIRED)
-# thread support for Boost.Asio
+# ------------------------------------------------------------------
+# Dependencies come from Conan 2. Before running cmake, do:
+#   conan install . --output-folder=build --build=missing -s build_type=Release
+# Then either build via a preset:
+#   cmake --preset conan-release
+# or point cmake at the generated toolchain manually:
+#   cmake -S . -B build/Release \
+#         -DCMAKE_TOOLCHAIN_FILE=build/Release/generators/conan_toolchain.cmake \
+#         -DCMAKE_BUILD_TYPE=Release
+# ------------------------------------------------------------------
+
+# Conan's CMakeDeps writes package configs into the build folder; make sure
+# find_package looks there even when CMake wasn't invoked via a preset.
+list(PREPEND CMAKE_MODULE_PATH  "${CMAKE_BINARY_DIR}")
+list(PREPEND CMAKE_PREFIX_PATH  "${CMAKE_BINARY_DIR}")
+
+find_package(asio REQUIRED CONFIG)
+find_package(nlohmann_json 3.7 REQUIRED CONFIG)
 find_package(Threads REQUIRED)
 
 # ---- Compile-time minimum log level --------------------------------------
@@ -26,11 +39,10 @@ add_executable(chess_engine ${CPP_SOURCES} ${CPP_HEADERS})
 
 target_include_directories(chess_engine PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
-    ${Boost_INCLUDE_DIRS}
 )
 
 target_link_libraries(chess_engine PRIVATE
-    Boost::system
+    asio::asio                    # standalone Asio (header-only)
     nlohmann_json::nlohmann_json
     Threads::Threads
 )
@@ -38,7 +50,6 @@ target_link_libraries(chess_engine PRIVATE
 target_compile_definitions(chess_engine PRIVATE
     CHESS_ENGINE_DEFAULT_PORT=5000
     CHESS_MIN_LOG_LEVEL=${CHESS_MIN_LOG_LEVEL}
-    BOOST_BIND_GLOBAL_PLACEHOLDERS  # keep pre-1.73 placeholder semantics
 )
 
 message(STATUS "chess_engine: CHESS_MIN_LOG_LEVEL=${CHESS_MIN_LOG_LEVEL}")

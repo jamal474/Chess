@@ -13,34 +13,26 @@ export default function ThemePicker({
   onChange: (t: BoardTheme) => void;
 }) {
   return (
-    <Modal open={open} onClose={onClose} title="Board Theme">
-      <label className="mb-3 block text-sm font-semibold text-slate-700">Choose a theme</label>
-      <select
-        className="w-full rounded-md border-2 border-black bg-white px-3 py-2 text-lg capitalize"
-        value={theme}
-        onChange={(e) => onChange(e.target.value as BoardTheme)}
-      >
+    <Modal open={open} onClose={onClose} title="BOARD THEME">
+      <div className="grid grid-cols-3 gap-3">
         {BOARD_THEMES.map((t) => (
-          <option key={t} value={t}>
-            {t}
-          </option>
+          <button
+            key={t}
+            onClick={() => onChange(t)}
+            className={[
+              "brut flex flex-col items-stretch overflow-hidden",
+              theme === t ? "outline outline-4 outline-accent" : "",
+            ].join(" ")}
+          >
+            <div className="grid grid-cols-2 h-16">
+              <div className={`theme-${t}-dark`} />
+              <div className={`theme-${t}-light`} />
+              <div className={`theme-${t}-light`} />
+              <div className={`theme-${t}-dark`} />
+            </div>
+            <span className="label bg-black text-white py-1">{t.toUpperCase()}</span>
+          </button>
         ))}
-      </select>
-
-      {/* Live preview: a 2×2 swatch */}
-      <div className="mt-6 grid grid-cols-2 gap-1 mx-auto" style={{ width: 200 }}>
-        <div className={`h-24 w-24 theme-${theme}-dark flex items-center justify-center`}>
-          <img src="/images/Bbishop.png" alt="" className="h-16 w-16 object-contain" />
-        </div>
-        <div className={`h-24 w-24 theme-${theme}-light flex items-center justify-center`}>
-          <img src="/images/Wbishop.png" alt="" className="h-16 w-16 object-contain" />
-        </div>
-        <div className={`h-24 w-24 theme-${theme}-light flex items-center justify-center`}>
-          <img src="/images/Wbishop.png" alt="" className="h-16 w-16 object-contain" />
-        </div>
-        <div className={`h-24 w-24 theme-${theme}-dark flex items-center justify-center`}>
-          <img src="/images/Bbishop.png" alt="" className="h-16 w-16 object-contain" />
-        </div>
       </div>
     </Modal>
   );
