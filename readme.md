@@ -91,6 +91,60 @@ VITE_SERVER_URL=http://localhost:3000   # local dev
 # leave empty in production so it uses the origin nginx serves from
 ```
 
+
+## Railway deployment
+
+Railway builds each service from its own directory; the repo is a
+monorepo so **you need three Railway services**, each pointing at one
+of `cppServer/`, `server/`, `client/`. All three ship a `Dockerfile`
+and a `railway.json` that tells Railpack to use it.
+
+**1. Create the three services** — same GitHub repo, different root
+directories:
+
+| Railway service name       | Root Directory | Public network? |
+|----------------------------|----------------|------------------|
+| `chess-cpp-engine`         | `cppServer`    | No (private)     |
+| `chess-node-server`        | `server`       | Yes              |
+| `chess-client`             | `client`       | Yes              |
+
+For each: **New → GitHub Repo → this repo → Settings → Root Directory**
+= the value above.
+
+**2. Wire the services together** — Railway exposes each service to
+its neighbours at `${service-name}.railway.internal` on `${PORT}`.
+Set these variables in the Railway UI:
+
+*On `chess-node-server`:*
+```
+CPP_HOST = chess-cpp-engine.railway.internal
+CPP_PORT = ${{chess-cpp-engine.PORT}}
+LOG_LEVEL = INFO
+ALLOWED_ORIGINS = *
+```
+
+*On `chess-client`:*
+```
+NODE_HOST = chess-node-server.railway.internal
+NODE_PORT = ${{chess-node-server.PORT}}
+```
+
+*On `chess-cpp-engine`:*
+```
+CHESS_LOG_LEVEL = INFO
+```
+
+The `${{ service.VAR }}` syntax is Railway's reference-variables
+feature — the port is auto-populated even when it changes on redeploy.
+
+**3. Expose the client publicly** — on `chess-client`: **Settings →
+Networking → Generate Domain**. The generated URL serves the SPA and
+proxies `/socket.io/` traffic to the node service through Railway's
+private network. Only that one URL needs to be exposed to the public
+internet; the node and cpp services stay private.
+
+That's it — pushing to the tracked git branch redeploys all three.
+
 ## macOS port 5000
 
 On macOS Monterey and later, AirPlay Receiver listens on port 5000 by

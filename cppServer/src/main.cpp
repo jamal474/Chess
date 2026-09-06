@@ -1,9 +1,11 @@
 //*********************************************************
 //
 // Entry point for the game.
-// Creates a Server object; port is 5000 by default and can
-// be overridden with the CHESS_ENGINE_PORT environment
-// variable (useful in containers / on a VM).
+// Creates a Server object. The bind port is chosen from,
+// in order of preference:
+//     PORT env var                 (Railway / most PaaS)
+//     CHESS_ENGINE_PORT env var    (docker-compose / local)
+//     compile-time default 5000
 //
 //*********************************************************
 
@@ -24,11 +26,13 @@ int main(int /*argc*/, char* /*argv*/[]) {
 
     try {
         int port = 5000;
-        if (const char* env_port = std::getenv("CHESS_ENGINE_PORT")) {
+        const char* env_port = std::getenv("PORT");
+        if (!env_port) env_port = std::getenv("CHESS_ENGINE_PORT");
+        if (env_port) {
             try {
                 port = std::stoi(env_port);
             } catch (...) {
-                LOG_WARN("main", "Invalid CHESS_ENGINE_PORT='" << env_port << "', using 5000");
+                LOG_WARN("main", "Invalid port env='" << env_port << "', using 5000");
             }
         }
 

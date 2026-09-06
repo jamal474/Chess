@@ -53,6 +53,11 @@ services:
         VITE_SERVER_URL: ""
     container_name: chess-client
     restart: unless-stopped
+    environment:
+      # nginx template picks these up on start to wire the proxy_pass.
+      PORT: "80"
+      NODE_HOST: "node-server"
+      NODE_PORT: "3000"
     depends_on:
       - node-server
     ports:
