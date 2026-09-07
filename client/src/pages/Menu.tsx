@@ -66,7 +66,6 @@ export default function Menu() {
       <div className="relative z-10 min-h-screen flex flex-col">
         <header className="border-b-3 border-black bg-white flex items-center justify-between px-6 py-3">
           <h1 className="font-display text-3xl tracking-tighter leading-none">C H E S S</h1>
-          <span className="label opacity-70">NO AUTH · JUST PLAY</span>
         </header>
 
         <main className="flex-1 flex items-center justify-center p-6">
@@ -154,8 +153,18 @@ export default function Menu() {
         </main>
 
         <footer className="border-t-3 border-black bg-black text-white px-6 py-3 flex items-center justify-between text-xs font-mono uppercase tracking-wider">
-          <span>REACT · SOCKET.IO · C++</span>
-          <span>V3 · BRUTALIST</span>
+          <span>&copy; {new Date().getFullYear()}</span>
+          <span>
+            made by{" "}
+            <a
+              href="https://shabbirjamal.com"
+              target="_blank"
+              rel="noreferrer noopener"
+              className="text-accent hover:underline"
+            >
+              sabo
+            </a>
+          </span>
         </footer>
       </div>
     </div>
