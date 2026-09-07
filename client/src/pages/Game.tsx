@@ -9,6 +9,7 @@ import MoveLog from "../components/MoveLog";
 import TurnIndicator from "../components/TurnIndicator";
 import ThemePicker from "../components/ThemePicker";
 import NavBar from "../components/NavBar";
+import NationalityBadge from "../components/NationalityBadge";
 import Modal from "../components/Modal";
 
 export default function Game() {
@@ -62,8 +63,12 @@ export default function Game() {
             </h1>
           </div>
 
-          {/* Single brutalist strip: [ ROOM | TIMER | TURN ], all one height. */}
+          {/* Single brutalist strip: [ FLAG | ROOM | TIMER | TURN ], all one height. */}
           <div className="brut h-full flex divide-x-[3px] divide-black overflow-hidden">
+            {/* NATIONALITY — flag + code. Height matches the cell (h-16 → ~40px inner). */}
+            <div className="flex items-center justify-center px-3 bg-white">
+              <NationalityBadge heightPx={40} />
+            </div>
             {/* ROOM */}
             <div className="flex flex-col justify-center px-4 min-w-[140px]">
               <span className="label opacity-70 text-[10px]">ROOM</span>

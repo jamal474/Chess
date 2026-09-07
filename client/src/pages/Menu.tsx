@@ -4,6 +4,7 @@ import { socket } from "../lib/socket";
 import { log } from "../lib/logger";
 import { PLAYER1, PLAYER2, type PlayerId } from "../lib/types";
 import FloatingPieces from "../components/FloatingPieces";
+import NationalityBadge from "../components/NationalityBadge";
 
 type Color = "White" | "Black" | "Random";
 
@@ -66,6 +67,9 @@ export default function Menu() {
       <div className="relative z-10 min-h-screen flex flex-col">
         <header className="border-b-3 border-black bg-white flex items-center justify-between px-6 py-3">
           <h1 className="font-display text-3xl tracking-tighter leading-none">C H E S S</h1>
+          <div className="brut bg-white px-3 py-1.5">
+            <NationalityBadge heightPx={22} />
+          </div>
         </header>
 
         <main className="flex-1 flex items-center justify-center p-6">
