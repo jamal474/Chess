@@ -20,6 +20,12 @@ const config = Object.freeze({
   CPP_PORT: num("CPP_PORT", 5000),
   CPP_REQUEST_TIMEOUT_MS: num("CPP_REQUEST_TIMEOUT_MS", 5000),
 
+  // socket.io endpoint path. Must match what the browser asks for. The client
+  // is mounted at a sub-path (/chess/) and nginx forwards that URI through
+  // unchanged, so in deployment this is "/chess/socket.io/"; the default keeps
+  // a bare `npm run dev` relay answering on its own root.
+  SOCKET_IO_PATH: process.env.SOCKET_IO_PATH || "/socket.io/",
+
   // CORS
   ALLOWED_ORIGINS: (process.env.ALLOWED_ORIGINS || "*")
     .split(",")

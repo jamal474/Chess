@@ -55,6 +55,7 @@ function createHttpApp(rooms) {
 
 function createIo(httpServer) {
   return new IoServer(httpServer, {
+    path: config.SOCKET_IO_PATH,
     cors: { origin: "*", methods: ["GET", "POST"] },
   });
 }
@@ -85,7 +86,8 @@ function main() {
     log.info(
       "server",
       `listening on http://${config.HOST}:${config.PORT} ` +
-        `(cpp: ${config.CPP_HOST}:${config.CPP_PORT}, log level=${log.level()})`
+        `(socket.io path: ${config.SOCKET_IO_PATH}, ` +
+        `cpp: ${config.CPP_HOST}:${config.CPP_PORT}, log level=${log.level()})`
     );
   });
 

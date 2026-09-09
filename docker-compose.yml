@@ -1,7 +1,8 @@
 # Full stack for a VM deployment:
 #   - cpp-engine: C++ chess game engine (Boost.Asio + nlohmann_json)
 #   - node-server: socket.io relay between clients and the engine
-#   - client: React SPA served by nginx (also proxies /socket.io/ to node)
+#   - client: React SPA served by nginx at /chess/ (also proxies
+#     /chess/socket.io/ to node)
 #
 # All three services declare `restart: unless-stopped` so they come back up
 # on VM reboot or a container crash. `docker compose up -d` on a fresh VM
@@ -36,6 +37,9 @@ services:
       CPP_HOST: "cpp-engine"
       CPP_PORT: "5000"
       ALLOWED_ORIGINS: "*"
+      # Must match the path the browser asks for. The client is mounted at
+      # /chess/ and nginx forwards the URI through unchanged.
+      SOCKET_IO_PATH: "/chess/socket.io/"
     depends_on:
       - cpp-engine
     ports:
@@ -49,13 +53,18 @@ services:
       context: ./client
       args:
         # Empty means the client talks to whichever host it was loaded from
-        # (nginx proxies /socket.io/ to node-server on the private network).
+        # (nginx proxies <base>/socket.io/ to node-server on the private
+        # network).
         VITE_SERVER_URL: ""
+        # Mount path. Feeds the Vite build, the directory the bundle is copied
+        # into, and the nginx locations — one value, no drift.
+        APP_BASE: "/chess"
     container_name: chess-client
     restart: unless-stopped
     environment:
       # nginx template picks these up on start to wire the proxy_pass.
       PORT: "80"
+      APP_BASE: "/chess"
       NODE_HOST: "node-server"
       NODE_PORT: "3000"
     depends_on:

@@ -1,7 +1,14 @@
 # Chess client — static SPA + WebSocket passthrough to the node relay.
 #
+# The app is mounted at a sub-path (${APP_BASE}, default /chess) because it is
+# reached as https://<short-domain>/chess/ through a Cloudflare worker that
+# forwards requests without rewriting them. Everything below therefore lives
+# under that prefix, and the built bundle sits on disk at
+# /usr/share/nginx/html${APP_BASE}/ so the URL and the filesystem agree.
+#
 # Template variables (substituted at container start by entrypoint.sh):
 #   ${PORT}       — nginx bind port      (Railway sets automatically; default 80)
+#   ${APP_BASE}   — mount path, no trailing slash (default /chess)
 #   ${NODE_HOST}  — node relay hostname  (Railway private DNS or compose service)
 #   ${NODE_PORT}  — node relay port      (Railway assigns; docker-compose 3000)
 #
@@ -15,22 +22,21 @@ server {
   root /usr/share/nginx/html;
   index index.html;
 
-  # Local health probe — nginx answers it directly. Kept independent of the
-  # node upstream on purpose: if node is temporarily down, we still want
-  # Railway's healthcheck to pass so the client container doesn't restart
+  # Local health probe — nginx answers it directly, and it stays at the root
+  # so Railway's healthcheck does not depend on the mount path. Kept
+  # independent of the node upstream on purpose: if node is temporarily down,
+  # we still want the check to pass so the client container doesn't restart
   # in a loop.
   location = /healthz {
     add_header Content-Type text/plain;
     return 200 "ok\n";
   }
 
-  # SPA fallback: any non-file route serves index.html so React Router owns it.
-  location / {
-    try_files $uri $uri/ /index.html;
-  }
-
-  # Socket.IO + WebSocket upgrade → node relay.
-  location /socket.io/ {
+  # Socket.IO + WebSocket upgrade → node relay. Longest-prefix wins in nginx,
+  # so this is matched ahead of the SPA location below. The URI is passed
+  # through unchanged (no trailing slash on proxy_pass), which means the node
+  # server must be started with SOCKET_IO_PATH=${APP_BASE}/socket.io/.
+  location ${APP_BASE}/socket.io/ {
     proxy_pass http://${NODE_HOST}:${NODE_PORT};
     proxy_http_version 1.1;
     proxy_set_header Upgrade $http_upgrade;
@@ -40,5 +46,23 @@ server {
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     proxy_set_header X-Forwarded-Proto $scheme;
     proxy_read_timeout 3600s;
+  }
+
+  # SPA fallback within the mount: any non-file route serves the app's
+  # index.html so React Router owns it.
+  location ${APP_BASE}/ {
+    try_files $uri $uri/ ${APP_BASE}/index.html;
+  }
+
+  # Bare mount path without the trailing slash — send it to the canonical one
+  # so relative URLs in the page resolve against the right directory.
+  location = ${APP_BASE} {
+    return 301 ${APP_BASE}/;
+  }
+
+  # Anything else on this container (including a direct hit on the Railway
+  # domain root) belongs at the app's real home.
+  location / {
+    return 301 ${APP_BASE}/;
   }
 }

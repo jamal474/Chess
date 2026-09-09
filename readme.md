@@ -25,8 +25,9 @@ Run everything (three services in one shell):
 ```sh
 make run              # or: ./scripts/run.sh
 ```
-Open http://localhost:5173, create a room, open the same URL in another tab,
-paste the code, and play.
+Open http://localhost:5173/chess/, create a room, open the same URL in
+another tab, paste the code, and play. The `/chess/` prefix is not incidental —
+see [Mount path](#mount-path) below.
 
 Individual services:
 
@@ -53,9 +54,10 @@ git clone <this repo> chess && cd chess
 ./scripts/deploy.sh    # docker compose build && up -d
 ```
 
-Then browse to `http://<vm-ip>:8080`. Nginx inside the client container
-proxies `/socket.io/` to the node relay, so **the only port that has to
-be exposed to the public internet is 8080**.
+Then browse to `http://<vm-ip>:8080/chess/` (a hit on `/` redirects there).
+Nginx inside the client container proxies `/chess/socket.io/` to the node
+relay, so **the only port that has to be exposed to the public internet is
+8080**.
 
 Container-level configuration (in `docker-compose.yml`):
 
@@ -82,6 +84,7 @@ NODE_PORT=3000
 CPP_HOST=localhost
 CPP_PORT=5000
 ALLOWED_ORIGINS=*
+SOCKET_IO_PATH=/socket.io/   # /chess/socket.io/ behind nginx
 ```
 
 Client (build time — passed via `VITE_SERVER_URL` in the Dockerfile arg or a
@@ -89,6 +92,40 @@ Client (build time — passed via `VITE_SERVER_URL` in the Dockerfile arg or a
 ```
 VITE_SERVER_URL=http://localhost:3000   # local dev
 # leave empty in production so it uses the origin nginx serves from
+```
+
+## Mount path
+
+The app is served from a sub-path, `/chess/`, rather than a domain root,
+because it sits behind a Cloudflare worker that fronts several projects on one
+short domain: `https://<short-domain>/chess/`. The worker forwards requests
+**without rewriting the path**, so the origin has to answer on `/chess/…`
+itself.
+
+`APP_BASE` (default `/chess`, no trailing slash) is the single source of truth.
+The client Dockerfile threads it into three places that must agree:
+
+| Consumer | What it controls |
+|---|---|
+| `BASE_PATH` → `vite.config.ts` | asset URLs, `BrowserRouter` basename, socket.io path |
+| `COPY … /usr/share/nginx/html${APP_BASE}` | where the bundle lands on disk |
+| `nginx.conf.template` locations | which URIs are served and proxied |
+
+Two consequences worth knowing:
+
+- **socket.io does not inherit the base.** Its `path` option is host-absolute,
+  so the client asks for `<base>socket.io/` and the node server must be started
+  with a matching `SOCKET_IO_PATH=/chess/socket.io/`. nginx passes the URI
+  through unchanged, so all three spell the same string.
+- **`/healthz` stays at the root**, deliberately: Railway's healthcheck should
+  not depend on the mount path, and it must keep answering when the relay is
+  down.
+
+Deploying at a different prefix is a single build arg:
+
+```sh
+docker compose build --build-arg APP_BASE=/play client
+# …and set SOCKET_IO_PATH=/play/socket.io/ on the node service.
 ```
 
 
@@ -121,13 +158,19 @@ CPP_HOST = chess-cpp-engine.railway.internal
 CPP_PORT = ${{chess-cpp-engine.PORT}}
 LOG_LEVEL = INFO
 ALLOWED_ORIGINS = *
+SOCKET_IO_PATH = /chess/socket.io/
 ```
 
 *On `chess-client`:*
 ```
 NODE_HOST = chess-node-server.railway.internal
 NODE_PORT = ${{chess-node-server.PORT}}
+APP_BASE = /chess
 ```
+
+`APP_BASE` is read at container start by `entrypoint.sh`; the *build* also
+needs it, so set it under **Settings → Build → Build Arguments** as well
+(or leave both at the `/chess` default baked into the Dockerfile).
 
 *On `chess-cpp-engine`:*
 ```
@@ -138,10 +181,11 @@ The `${{ service.VAR }}` syntax is Railway's reference-variables
 feature — the port is auto-populated even when it changes on redeploy.
 
 **3. Expose the client publicly** — on `chess-client`: **Settings →
-Networking → Generate Domain**. The generated URL serves the SPA and
-proxies `/socket.io/` traffic to the node service through Railway's
-private network. Only that one URL needs to be exposed to the public
-internet; the node and cpp services stay private.
+Networking → Generate Domain**. The generated URL serves the SPA at
+`/chess/` and proxies `/chess/socket.io/` traffic to the node service through
+Railway's private network. Only that one URL needs to be exposed to the public
+internet; the node and cpp services stay private — and it is the URL the
+Cloudflare worker proxies to (`cloudflare-worker/src/routes.config.js`).
 
 That's it — pushing to the tracked git branch redeploys all three.
 
