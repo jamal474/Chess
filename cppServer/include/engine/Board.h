@@ -58,6 +58,16 @@ public:
 
     std::set<std::pair<int, int>> get_possible_moves(std::string, std::string);
 
+    // The piece `piece_id` of `player_id`, or nullptr if either is unknown.
+    // Unlike players[..]->piece_map[..], never inserts an empty entry.
+    Chess_Piece* find_piece(const std::string& player_id, const std::string& piece_id);
+
+    // Everything the side to move needs in one go:
+    //   { player_id, check_or_mate_status: CHECK|CHECK_MATE|STALE_MATE|NIL,
+    //     legal_moves: { <piece_id>: [{x,y}, ...], ... } }
+    // Also updates under_check for that player.
+    json turn_state(const std::string& player_id);
+
     //This function calculate and return only the legal moves of all possible moves
     std::set<std::pair<int, int>> get_legal_moves(std::string, std::string);
 

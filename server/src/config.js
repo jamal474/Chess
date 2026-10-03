@@ -32,6 +32,12 @@ const config = Object.freeze({
     .map((s) => s.trim())
     .filter(Boolean),
 
+  // Development tools (load a game from PGN, solo games, save fixtures).
+  // Opt-in with DEV_TOOLS=1, and never on when NODE_ENV=production; the
+  // server Dockerfile sets that, and the code isn't in the image anyway.
+  DEV_TOOLS: process.env.DEV_TOOLS === "1" && process.env.NODE_ENV !== "production",
+  DEV_GAMES_DIR: process.env.DEV_GAMES_DIR || "",
+
   // Logger already reads LOG_LEVEL / CHESS_LOG_LEVEL itself; exposed here only
   // for the boot line.
   LOG_LEVEL: process.env.LOG_LEVEL || process.env.CHESS_LOG_LEVEL || "INFO",

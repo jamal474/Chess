@@ -15,25 +15,11 @@ public:
 	bool delete_room(std::string);
 	bool reset_room(std::string);
 
-	Board *operator[](std::string room_id)
+	// The room's board, or nullptr if there is no such room.
+	Board *operator[](const std::string& room_id)
 	{
-		try
-		{
-			if (game_map.find(room_id) == game_map.end())
-			{
-				throw("Room : " + room_id + " Does Not Exist");
-			}
-		}
-		catch (const std::string& error)
-		{
-			std::cerr
-				<< error
-				<< std::endl;
-			return NULL;
-		}
-		std::cout << "\nIn game class roomid: " << room_id;
-		std::cout << "\ngamemap::roomid: " << game_map[room_id];
-		return game_map[room_id];
+		auto it = game_map.find(room_id);
+		return it == game_map.end() ? nullptr : it->second;
 	}
 };
 

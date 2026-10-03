@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import type { BoardTheme, SquareId } from "../lib/types";
 import type { Piece } from "../lib/pieces";
@@ -11,6 +11,10 @@ import ThemePicker from "../components/ThemePicker";
 import NavBar from "../components/NavBar";
 import NationalityBadge from "../components/NationalityBadge";
 import Modal from "../components/Modal";
+
+// Dev tools panel. import.meta.env.DEV is false in production builds, so the
+// import below is dropped and the panel's code never reaches the bundle.
+const DevPanel = import.meta.env.DEV ? lazy(() => import("../dev/DevPanel")) : null;
 
 export default function Game() {
   const nav = useNavigate();
@@ -94,7 +98,7 @@ export default function Game() {
             </div>
 
             {/* TURN — informative, colour-flips when it's your move */}
-            <TurnIndicator currentTurn={game.currentTurn} me={game.playerId} />
+            <TurnIndicator currentTurn={game.currentTurn} me={game.actingPlayer} />
           </div>
         </div>
       </header>
@@ -105,6 +109,7 @@ export default function Game() {
         <div className="h-full aspect-square shrink-0">
           <Board
             playerId={game.playerId}
+            activePlayerId={game.actingPlayer}
             pieces={game.pieces}
             highlightMoves={game.highlightMoves}
             highlightCaptures={game.highlightCaptures}
@@ -130,6 +135,11 @@ export default function Game() {
               onResign={game.resign}
             />
           </div>
+          {DevPanel && (
+            <Suspense fallback={null}>
+              <DevPanel game={game} />
+            </Suspense>
+          )}
           <div className="flex-[2] min-h-0">
             <ChatBox me={game.playerId} messages={game.messages} onSend={game.sendChat} />
           </div>

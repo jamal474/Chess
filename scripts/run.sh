@@ -59,8 +59,10 @@ sleep 0.5
 # ---- Node relay ---- (cyan prefix)
 (
     cd "$ROOT/server"
+    # DEV_TOOLS=1 enables loading saved positions (dev/games/*.pgn) and solo
+    # games; see docs/development.md. Override with DEV_TOOLS=0 make run.
     exec env CPP_HOST=localhost CPP_PORT="$CPP_PORT" NODE_PORT="$NODE_PORT" \
-        LOG_LEVEL="$LOG_LEVEL" \
+        LOG_LEVEL="$LOG_LEVEL" DEV_TOOLS="${DEV_TOOLS:-1}" \
         npm start --silent
 ) 2>&1 | prefix "36" "Node  " &
 
@@ -80,6 +82,9 @@ echo "Services:"
 echo "  Client:  http://localhost:$CLIENT_PORT${APP_BASE:-/chess}/"
 echo "  Node:    http://localhost:$NODE_PORT"
 echo "  Cpp:     tcp://localhost:$CPP_PORT"
+echo ""
+echo "  Dev:     http://localhost:$CLIENT_PORT${APP_BASE:-/chess}/?dev=solo   (one-tab game)"
+echo "           http://localhost:$CLIENT_PORT${APP_BASE:-/chess}/?dev=<game>&ply=<n>  (see dev/games/)"
 echo ""
 echo "  Tip: macOS reserves port 5000 for AirPlay Receiver. If you see"
 echo "       \"Address already in use\", pass CPP_PORT=<other port> to make run."

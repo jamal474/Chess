@@ -16,7 +16,7 @@ function attachSocketHandlers(socket, deps) {
   attachLifecycleHandlers(socket, deps);
 }
 
-function attachLifecycleHandlers(socket, { io, rooms }) {
+function attachLifecycleHandlers(socket, { io, rooms, engine }) {
   socket.on("disconnect", (reason) => {
     const roomId = rooms.unbindSocket(socket.id);
     let empty = false;
@@ -26,6 +26,7 @@ function attachLifecycleHandlers(socket, { io, rooms }) {
       const remaining = io.sockets.adapter.rooms.get(roomId)?.size ?? 0;
       if (remaining === 0) {
         rooms.dispose(roomId);
+        engine.deleteRoom(roomId); // free the engine's board too
         empty = true;
       }
     }

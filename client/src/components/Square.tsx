@@ -48,6 +48,7 @@ export default function Square({
     <div
       ref={setNodeRef}
       onClick={onClick}
+      data-square={id}
       className={[
         "relative flex items-center justify-center transition-shadow",
         themeClass,

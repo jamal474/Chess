@@ -11,6 +11,8 @@ const PLAYER = Object.freeze({
 // Names of C++ engine requests + response `res_id` values.
 const CPP_REQ = Object.freeze({
   CREATE_ROOM:     "create_room",
+  DELETE_ROOM:     "delete_room",
+  TURN_STATE:      "turn_state",
   VALID_MOVES:     "valid_moves",
   UPDATE_POSITION: "update_position",
   CHECK_OR_MATE:   "check_or_mate",
@@ -59,6 +61,10 @@ const SOCKET_EVENT = Object.freeze({
   SERVER_PIECE_FOCUS:    "serverPieceFocus",
   SERVER_PIECE_MOVE:     "serverPieceMove",
   CHANGE_TURN:           "changeTurn",
+  // (playerId, { [pieceId]: [{x,y}, …] }): every legal move for the side to
+  // move, sent at the start of each turn so the browser can highlight
+  // without asking.
+  LEGAL_MOVES:           "legalMoves",
   CHECK:                 "check",
   CHECK_MATE:            "checkMate",
   STALE_MATE:            "staleMate",

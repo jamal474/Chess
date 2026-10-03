@@ -2,16 +2,30 @@
 
 //*********************************************************
 //
-// Conn_handler — one TCP connection, one request/response
-// cycle. Kept alive across async callbacks via
-// std::enable_shared_from_this.
+// Conn_handler — one long-lived TCP connection from the
+// Node relay.
+//
+// Protocol: newline-delimited JSON (NDJSON). Each line the
+// relay sends is one request object; the engine answers
+// every request with exactly one response line, in the
+// order the requests arrived. A request may carry a "seq"
+// field, which is echoed back so the relay can match
+// responses to requests. Several requests can be in flight
+// on the same connection.
+//
+//   → {"seq":7,"req_id":"valid_moves","room_id":"AB12C",...}\n
+//   ← {"seq":7,"res_id":"valid_moves","status":"SUCCESSFUL",...}\n
+//
+// Malformed or invalid requests get an error response
+// (status != "SUCCESSFUL") instead of being dropped, and
+// never touch game state.
 //
 //*********************************************************
 
 #include <asio.hpp>
+#include <deque>
 #include <memory>
 #include <nlohmann/json.hpp>
-#include <queue>
 #include <string>
 #include <system_error>
 
@@ -22,35 +36,34 @@ using json = nlohmann::json;
 
 class Conn_handler : public std::enable_shared_from_this<Conn_handler> {
 private:
-    enum { max_length = 1024 };
+    // A single request line may not exceed this. Real requests are < 300 bytes.
+    static constexpr std::size_t max_line_bytes = 64 * 1024;
 
     ip::tcp::socket socket;
-    std::string return_data;
-    char received_data[max_length] = {'1', '\0'};
-    std::queue<std::string> request_queue;
-
-    // Process the received HTTP request
-    void process_http_request(const std::string& request);
-
-    // Send the response for the processed HTTP request
-    void send_http_response(const std::string& response);
-
-    // Read the incoming data from the socket
-    void read_data(const std::error_code&, size_t);
-
-    // Various request handlers
-    void create_room(json);
-    void delete_room(json);
-    void get_legal_moves(json);
-    void update_board(json);
-    void validate_check(json);
-    void pawn_promotion(json);
-    void undo(json);
-    void redo(json);
-    void reset_room(json);
-    void castle_move(json);
-
+    asio::streambuf inbuf{max_line_bytes};
+    std::deque<std::string> outbox;  // responses waiting to be written
     Game* game;
+
+    void read_next();
+    void on_line(const std::string& line);
+    void write(std::string line);
+    void write_next();
+
+    // Request → response. Never throws.
+    json handle(const json& req);
+
+    // Request handlers. Each returns the response body (without "seq").
+    json create_room(const json&);
+    json delete_room(const json&);
+    json get_legal_moves(const json&);
+    json update_board(const json&);
+    json validate_check(const json&);
+    json turn_state(const json&);
+    json pawn_promotion(const json&);
+    json undo(const json&);
+    json redo(const json&);
+    json reset_room(const json&);
+    json resign(const json&);
 
 public:
     typedef std::shared_ptr<Conn_handler> pointer;

@@ -15,7 +15,7 @@ Board::Board(std::string room_id)
     under_check[ID::PLAYER2] = false;
 
     //Set Room id for the current Game
-    room_id = room_id;
+    this->room_id = room_id;
 
     /*
     * KEY - Position on the board
@@ -40,7 +40,7 @@ Board::Board(std::string room_id)
     board_map[{7, 1}] = { ID::PLAYER2,players[ID::PLAYER2]->piece_map[ID::PAWN1] };     board_map[{7, 2}] = { ID::PLAYER2,players[ID::PLAYER2]->piece_map[ID::PAWN2] };
     board_map[{7, 3}] = { ID::PLAYER2,players[ID::PLAYER2]->piece_map[ID::PAWN3] };     board_map[{7, 4}] = { ID::PLAYER2,players[ID::PLAYER2]->piece_map[ID::PAWN4] };
     board_map[{7, 5}] = { ID::PLAYER2,players[ID::PLAYER2]->piece_map[ID::PAWN5] };     board_map[{7, 6}] = { ID::PLAYER2,players[ID::PLAYER2]->piece_map[ID::PAWN6] };
-    board_map[{7, 7}] = { ID::PLAYER2,players[ID::PLAYER2]->piece_map[ID::PAWN7] };     board_map[{7, 8}] = { ID::PLAYER2,players[ID::PLAYER2]->piece_map[ID::PAWN7] };
+    board_map[{7, 7}] = { ID::PLAYER2,players[ID::PLAYER2]->piece_map[ID::PAWN7] };     board_map[{7, 8}] = { ID::PLAYER2,players[ID::PLAYER2]->piece_map[ID::PAWN8] };
 }
 
 //--------------------------------------------------------------------------------------
@@ -371,6 +371,48 @@ void Board::update_position(std::string player_id, std::string piece_id, std::pa
 std::set<std::pair<int, int>> Board::get_possible_moves(std::string player_id, std::string piece_id)
 {
     return players[player_id]->piece_map[piece_id]->get_possible_moves(board_map, player_id);
+}
+
+//--------------------------------------------------------------------------------------
+
+Chess_Piece* Board::find_piece(const std::string& player_id, const std::string& piece_id)
+{
+    auto player = players.find(player_id);
+    if (player == players.end() || !player->second) return nullptr;
+    auto piece = player->second->piece_map.find(piece_id);
+    if (piece == player->second->piece_map.end()) return nullptr;
+    return piece->second;
+}
+
+//--------------------------------------------------------------------------------------
+
+json Board::turn_state(const std::string& player_id)
+{
+    json legal_moves = json::object();
+    bool any_move = false;
+
+    for (const auto& entry : players[player_id]->piece_map)
+    {
+        if (entry.second == nullptr || entry.second->get_is_alive() == false)
+            continue;
+
+        json targets = json::array();
+        for (const auto& move : get_legal_moves(player_id, entry.first))
+        {
+            targets.push_back({ {"x", move.first}, {"y", move.second} });
+        }
+        any_move = any_move || !targets.empty();
+        legal_moves[entry.first] = targets;
+    }
+
+    const bool in_check = calc_check(player_id);
+    update_under_check(player_id, in_check);
+
+    std::string status;
+    if (in_check) status = any_move ? "CHECK" : "CHECK_MATE";
+    else status = any_move ? "NIL" : "STALE_MATE";
+
+    return { {"player_id", player_id}, {"check_or_mate_status", status}, {"legal_moves", legal_moves} };
 }
 
 //--------------------------------------------------------------------------------------
