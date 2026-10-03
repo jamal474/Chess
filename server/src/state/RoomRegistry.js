@@ -12,10 +12,10 @@ const { log } = require("../logger");
  * A Room lives from `create()` (creator lands) → `dispose()` (last socket
  * leaves). During gameplay we track:
  *   - whose turn it is;
- *   - the last set of valid moves the engine sent for each of a player's
- *     pieces, so pieceMove can be authorised without an extra engine round-trip;
- *   - which of a player's pawns have already been auto-promoted (mirrors the
- *     client's own bookkeeping so undo/redo can restore it).
+ *   - the legal moves of the side to move, as pushed by the engine at the
+ *     start of each turn, so pieceMove is authorised without a round-trip;
+ *   - which of a player's pawns have been promoted (recorded when the engine
+ *     reports a promotion).
  */
 class RoomRegistry {
   constructor() {
@@ -86,6 +86,11 @@ class RoomRegistry {
     return this._rooms.get(roomId)?.turn ?? null;
   }
 
+  setTurn(roomId, playerId) {
+    const room = this._rooms.get(roomId);
+    if (room) room.turn = playerId;
+  }
+
   swapTurn(roomId) {
     const room = this._rooms.get(roomId);
     if (!room) return null;
@@ -94,6 +99,19 @@ class RoomRegistry {
   }
 
   // ---------- per-turn move authorisation ----------
+
+  /** Replaces a player's legal moves for this turn: { [pieceId]: [{x,y}, …] }. */
+  setLegalMoves(roomId, playerId, movesByPiece) {
+    const player = this._rooms.get(roomId)?.players?.[playerId];
+    if (player) player.moveMap = { ...movesByPiece };
+  }
+
+  /** Forgets both players' legal moves (while a move is being applied, after resign, …). */
+  clearLegalMoves(roomId) {
+    const room = this._rooms.get(roomId);
+    if (!room) return;
+    for (const p of Object.values(room.players)) p.moveMap = {};
+  }
 
   storeValidMoves(roomId, playerId, pieceId, positions) {
     const player = this._rooms.get(roomId)?.players?.[playerId];

@@ -26,6 +26,12 @@ public:
         this->is_promoted = is_promoted;
     }
 
+    // Pieces are owned and deleted through Chess_Piece* (Player, Board::undo),
+    // so the destructor must be virtual: deleting a Pawn through a base pointer
+    // otherwise frees it with the wrong size, which is undefined behaviour and
+    // aborts the engine on macOS ("Trace/BPT trap").
+    virtual ~Chess_Piece() = default;
+
     /* Getters and Setters */
     std::pair<int, int> get_position();
     

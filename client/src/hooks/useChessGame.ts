@@ -7,31 +7,68 @@
 //   during: socket listeners drive board / move-log / chat / timers
 //   unmount: detaches every listener; the socket stays alive so it can be
 //            re-attached from another mount without renegotiating.
+//
+// Latency: the relay pushes `legalMoves` for the side to move at the start of
+// every turn, plus check / mate / promotion with the move itself. So:
+//   * selecting a piece highlights from that list, no request;
+//   * your own move is shown immediately (optimistically) and rolled back if
+//     the relay's ack says it was rejected;
+//   * nothing is ever requested to find out about check or promotion.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { socket } from "../lib/socket";
 import { log } from "../lib/logger";
 import { playCapture, playMove, playNotify } from "../lib/audio";
 import {
+  engineId,
   initialPieces,
+  isPiece,
   moveNotation,
   objPosition,
   ownColor,
+  pieceKey,
   strPosition,
   type Piece,
   type PieceColor,
 } from "../lib/pieces";
-import { PLAYER1, PLAYER2, type PlayerId, type SquareId } from "../lib/types";
+import { PLAYER1, PLAYER2, type PlayerId, type PosObj, type SquareId } from "../lib/types";
 import { useTimer } from "./useTimer";
 
 export type ChatMsg = { from: PlayerId; text: string };
+
+/** Board state pushed by the relay's dev tools after loading a game (dev only). */
+export type DevSnapshot = {
+  name: string;
+  ply: number;
+  total: number;
+  pieces: Piece[];
+  turn: PlayerId;
+  moveRows: MoveRow[];
+  recentMove: { from: SquareId; to: SquareId } | null;
+};
 export type MoveRow = { i: number; white: string; black: string };
+
+/** Legal moves of the side to move, keyed by engine piece id. */
+type LegalMoves = { player: PlayerId; moves: Record<string, PosObj[]> };
+
+/** A move shown before the relay confirmed it. */
+type PendingMove = {
+  color: PieceColor;
+  engineId: string;
+  to: SquareId;
+  notation: string;
+  undo: { pieces: Piece[]; recentMove: { from: SquareId; to: SquareId } | null; legal: LegalMoves | null };
+};
+
+const ACK_TIMEOUT_MS = 8000;
 
 export type ChessGame = {
   // room
   roomCode: string;
   isCreator: boolean;
   playerId: PlayerId;
+  /** Who this tab moves for right now: playerId, or whoever's turn it is in hot-seat mode. */
+  actingPlayer: PlayerId;
 
   // state
   pieces: Piece[];
@@ -57,7 +94,12 @@ export type ChessGame = {
   resign: () => void;
   reset: () => void;
   dismissGameOver: () => void;
+
+  /** Dev builds only: play both sides from one tab. Undefined in production. */
+  dev?: { hotSeat: boolean; setHotSeat: (on: boolean) => void };
 };
+
+const colorOf = (p: PlayerId): PieceColor => (p === PLAYER1 ? "W" : "B");
 
 export function useChessGame(): ChessGame {
   const isCreator = sessionStorage.getItem("isCreator") === "true";
@@ -80,21 +122,34 @@ export function useChessGame(): ChessGame {
   const [moveRows, setMoveRows] = useState<MoveRow[]>([]);
   const [gameOver, setGameOver] = useState<string | null>(null);
 
+  // Hot seat (dev only): this tab moves for whichever side is to play. In a
+  // production build import.meta.env.DEV is false, so this is always off.
+  const [hotSeat, setHotSeatState] = useState(
+    () => import.meta.env.DEV && sessionStorage.getItem("devHotSeat") === "true"
+  );
+  const actingPlayer: PlayerId = hotSeat ? currentTurn : playerId;
+
   const timer = useTimer();
   const timerRef = useRef(timer);
   timerRef.current = timer;
 
-  // Kept as a ref because socket listeners live for the mount lifetime and
-  // we don't want to re-register them just because the pieces state changed.
+  // Refs, because socket listeners live for the mount lifetime and shouldn't
+  // be re-registered whenever state changes.
   const piecesRef = useRef(pieces);
   piecesRef.current = pieces;
+  const recentMoveRef = useRef(recentMove);
+  recentMoveRef.current = recentMove;
+  const legalRef = useRef<LegalMoves | null>(null);
+  const pendingRef = useRef<PendingMove | null>(null);
 
   // ---------- Low-level piece mutation ----------
+
+  /** Moves (or removes, or revives) a piece, found by its engine id. */
   const setPieceSquare = useCallback(
     (color: PieceColor, id: string, square: SquareId | null) => {
       setPieces((prev) => {
         const next = prev.slice();
-        const idx = next.findIndex((p) => p.color === color && p.id === id);
+        const idx = next.findIndex((p) => isPiece(p, color, id));
         if (idx === -1) {
           // Reviving a captured piece.
           if (square) next.push({ color, id, square });
@@ -109,19 +164,40 @@ export function useChessGame(): ChessGame {
     []
   );
 
-  const captureAt = useCallback((sq: SquareId): boolean => {
-    let captured = false;
-    setPieces((prev) => {
-      const next = prev.filter((p) => {
-        if (p.square === sq) {
-          captured = true;
-          return false;
-        }
-        return true;
-      });
-      return next;
+  /** Applies a move locally: captures whatever is on `to`, then moves the piece. */
+  const applyMove = useCallback((color: PieceColor, id: string, to: SquareId) => {
+    setPieces((prev) =>
+      prev
+        .filter((p) => p.square !== to)
+        .map((p) => (isPiece(p, color, id) ? { ...p, square: to } : p))
+    );
+  }, []);
+
+  const addMoveRow = useCallback((pId: PlayerId, notation: string) => {
+    setMoveRows((prev) => {
+      const rows = prev.slice();
+      if (pId === PLAYER1) {
+        rows.push({ i: rows.length + 1, white: notation, black: "" });
+      } else if (rows.length > 0) {
+        rows[rows.length - 1] = { ...rows[rows.length - 1], black: notation };
+      }
+      return rows;
     });
-    return captured;
+  }, []);
+
+  /** Shows `positions` as move / capture squares for `pId`'s pieces. */
+  const showTargets = useCallback((pId: PlayerId, positions: PosObj[]) => {
+    const mine = colorOf(pId);
+    const moves: SquareId[] = [];
+    const caps: SquareId[] = [];
+    for (const pos of positions) {
+      const sq = strPosition(pos);
+      const occupied = piecesRef.current.find((p) => p.square === sq);
+      if (occupied && occupied.color !== mine) caps.push(sq);
+      else moves.push(sq);
+    }
+    setHighlightMoves(moves);
+    setHighlightCaptures(caps);
   }, []);
 
   // ---------- Socket lifecycle ----------
@@ -131,6 +207,10 @@ export function useChessGame(): ChessGame {
       if (isCreator) {
         log.info("useChessGame", `createRoom ${roomCode} as ${playerId}`);
         socket.emit("createRoom", roomCode, playerId);
+        if (import.meta.env.DEV && sessionStorage.getItem("devSolo") === "true") {
+          // Dev "solo game": the relay starts the room without a second player.
+          import("../dev/devClient").then((m) => m.startSolo(roomCode));
+        }
       } else {
         log.info("useChessGame", `joinRoom ${roomCode}`);
         socket.emit("joinRoom", roomCode);
@@ -147,30 +227,35 @@ export function useChessGame(): ChessGame {
   useEffect(() => {
     const onStart = () => timerRef.current.reset();
 
+    const onLegalMoves = (pId: PlayerId, moves: Record<string, PosObj[]>) => {
+      legalRef.current = { player: pId, moves: moves || {} };
+    };
+
     const onServerPieceMove = (
       pId: PlayerId,
       pieceId: string,
-      oldPos: { x: number; y: number },
-      newPos: { x: number; y: number }
+      oldPos: PosObj,
+      newPos: PosObj
     ) => {
-      const color: PieceColor = pId === PLAYER1 ? "W" : "B";
-      const from = strPosition(oldPos);
+      const color = colorOf(pId);
       const to = strPosition(newPos);
-      const captured = captureAt(to);
-      setPieceSquare(color, pieceId, to);
+      const pending = pendingRef.current;
+
+      // Our own optimistic move coming back: the board already shows it.
+      if (pending && pending.color === color && pending.engineId === pieceId && pending.to === to) {
+        pendingRef.current = null;
+        addMoveRow(pId, pending.notation);
+        return;
+      }
+
+      const from = strPosition(oldPos);
+      const current = piecesRef.current;
+      const mover = current.find((p) => isPiece(p, color, pieceId));
+      const captured = current.some((p) => p.square === to);
+      applyMove(color, pieceId, to);
       setRecentMove({ from, to });
       captured ? playCapture() : playMove();
-
-      setMoveRows((prev) => {
-        const rows = prev.slice();
-        const notation = moveNotation(pieceId, to, captured);
-        if (pId === PLAYER1) {
-          rows.push({ i: rows.length + 1, white: notation, black: "" });
-        } else if (rows.length > 0) {
-          rows[rows.length - 1] = { ...rows[rows.length - 1], black: notation };
-        }
-        return rows;
-      });
+      addMoveRow(pId, moveNotation(mover?.id ?? pieceId, to, captured, from));
     };
 
     const onChangeTurn = (turn: PlayerId) => {
@@ -179,36 +264,24 @@ export function useChessGame(): ChessGame {
       setHighlightMoves([]);
       setHighlightCaptures([]);
       setSelectedKey(null);
-      if (turn === playerId) socket.emit("checkOrMateStatus", playerId);
     };
 
-    const onServerPieceFocus = (
-      pId: PlayerId,
-      positions: { x: number; y: number }[] | null
-    ) => {
-      if (pId !== playerId) return;
+    // Fallback path: only used if no legalMoves arrived (older relay).
+    const onServerPieceFocus = (pId: PlayerId, positions: PosObj[] | null) => {
+      if (legalRef.current) return;
       if (!positions) {
         setHighlightMoves([]);
         setHighlightCaptures([]);
         return;
       }
-      const my = ownColor(playerId);
-      const moves: SquareId[] = [];
-      const caps: SquareId[] = [];
-      for (const pos of positions) {
-        const sq = strPosition(pos);
-        const occupied = piecesRef.current.find((p) => p.square === sq);
-        if (occupied && occupied.color !== my) caps.push(sq);
-        else moves.push(sq);
-      }
-      setHighlightMoves(moves);
-      setHighlightCaptures(caps);
+      showTargets(pId, positions);
     };
 
     const onCheck = (pId: PlayerId) => { log.debug("useChessGame", `check on ${pId}`); setCheckedPlayer(pId); };
 
     const onCheckMate = (pId: PlayerId) => {
       timerRef.current.stop();
+      setCheckedPlayer(pId);
       const winnerColor = pId === PLAYER1 ? "Black" : "White";
       const who = pId === playerId ? "opponent" : "you";
       log.info("useChessGame", `checkmate — ${winnerColor} wins (${who})`);
@@ -228,11 +301,14 @@ export function useChessGame(): ChessGame {
 
     const onServerResign = (pId: PlayerId) => {
       timerRef.current.stop();
+      legalRef.current = null;
       const who = pId === playerId ? "You" : "Opponent";
       setGameOver(`${who} resigned.`);
     };
 
     const onServerReset = () => {
+      legalRef.current = null;
+      pendingRef.current = null;
       setPieces(initialPieces());
       setCurrentTurn(PLAYER1);
       setCheckedPlayer(null);
@@ -245,54 +321,38 @@ export function useChessGame(): ChessGame {
       timerRef.current.reset();
     };
 
-    // The C++ engine auto-promotes pawns to queens. This handler used to update
-    // the piece image; with glyphs we swap the `id` prefix so the piece renders
-    // as its new kind.
-    const onServerPromotion = (
-      pId: PlayerId,
-      pieceId: string,
-      _position: { x: number; y: number },
-      newPieceId: string
-    ) => {
-      const color: PieceColor = pId === PLAYER1 ? "W" : "B";
+    // The engine promotes a pawn as part of the move; this only changes how
+    // the piece renders: "pawn3" → "queen__pawn3".
+    const onServerPromotion = (pId: PlayerId, pieceId: string, _position: PosObj, newPieceId: string) => {
+      const color = colorOf(pId);
       setPieces((prev) =>
         prev.map((p) =>
-          p.color === color && p.id === pieceId
-            ? { ...p, id: `${newPieceId}__${pieceId}` } // stable-but-unique replacement id
-            : p
+          p.color === color && p.id === pieceId ? { ...p, id: `${newPieceId}__${pieceId}` } : p
         )
       );
-      if (pId === playerId) {
-        const opp = playerId === PLAYER1 ? PLAYER2 : PLAYER1;
-        socket.emit("checkOrMateStatus", opp);
-      }
     };
 
     const onServerUndo = (
       pId: PlayerId,
       pieceId: string,
-      position: { x: number; y: number },
+      position: PosObj,
       isDemoted: string,
       revivedPlayerId: PlayerId,
       revivedPieceId: string,
-      revivedPosition: { x: number; y: number } | null
+      revivedPosition: PosObj | null
     ) => {
-      const color: PieceColor = pId === PLAYER1 ? "W" : "B";
+      const color = colorOf(pId);
       setPieceSquare(color, pieceId, strPosition(position));
       if (isDemoted === "yes") {
-        // Was promoted; restore its original id prefix.
+        // Was promoted; it's a pawn again.
         setPieces((prev) =>
-          prev.map((p) =>
-            p.color === color && p.id.endsWith(`__${pieceId}`)
-              ? { ...p, id: pieceId }
-              : p
-          )
+          prev.map((p) => (p.color === color && p.id.endsWith(`__${pieceId}`) ? { ...p, id: pieceId } : p))
         );
       }
       if (revivedPieceId !== "NIL" && revivedPosition) {
-        const rcolor: PieceColor = revivedPlayerId === PLAYER1 ? "W" : "B";
-        setPieceSquare(rcolor, revivedPieceId, strPosition(revivedPosition));
+        setPieceSquare(colorOf(revivedPlayerId), revivedPieceId, strPosition(revivedPosition));
       }
+      setRecentMove(null);
       setMoveRows((prev) => {
         const rows = prev.slice();
         if (pId === PLAYER1) rows.pop();
@@ -305,30 +365,26 @@ export function useChessGame(): ChessGame {
     const onServerRedo = (
       pId: PlayerId,
       pieceId: string,
-      position: { x: number; y: number },
+      position: PosObj,
       pawnPromoted: string,
       killedPlayerId: PlayerId,
       killedPieceId: string,
-      killedPosition: { x: number; y: number } | null
+      killedPosition: PosObj | null
     ) => {
-      const color: PieceColor = pId === PLAYER1 ? "W" : "B";
+      const color = colorOf(pId);
       if (killedPieceId !== "NIL" && killedPosition) {
-        const kcolor: PieceColor = killedPlayerId === PLAYER1 ? "W" : "B";
-        setPieceSquare(kcolor, killedPieceId, null);
+        setPieceSquare(colorOf(killedPlayerId), killedPieceId, null);
       }
       setPieceSquare(color, pieceId, strPosition(position));
       if (pawnPromoted === "yes") {
         setPieces((prev) =>
-          prev.map((p) =>
-            p.color === color && p.id === pieceId
-              ? { ...p, id: `queen__${pieceId}` }
-              : p
-          )
+          prev.map((p) => (p.color === color && p.id === pieceId ? { ...p, id: `queen__${pieceId}` } : p))
         );
       }
     };
 
     socket.on("startGame", onStart);
+    socket.on("legalMoves", onLegalMoves);
     socket.on("serverPieceMove", onServerPieceMove);
     socket.on("changeTurn", onChangeTurn);
     socket.on("serverPieceFocus", onServerPieceFocus);
@@ -344,6 +400,7 @@ export function useChessGame(): ChessGame {
 
     return () => {
       socket.off("startGame", onStart);
+      socket.off("legalMoves", onLegalMoves);
       socket.off("serverPieceMove", onServerPieceMove);
       socket.off("changeTurn", onChangeTurn);
       socket.off("serverPieceFocus", onServerPieceFocus);
@@ -357,35 +414,55 @@ export function useChessGame(): ChessGame {
       socket.off("serverUndo", onServerUndo);
       socket.off("serverRedo", onServerRedo);
     };
-  }, [captureAt, playerId, setPieceSquare]);
+  }, [addMoveRow, applyMove, playerId, setPieceSquare, showTargets]);
 
-  // ---------- Auto-queen promotion (asks the server) ----------
+  // ---------- Dev: apply a board snapshot after the relay loads a game ----------
   useEffect(() => {
-    const my = ownColor(playerId);
-    const lastRank = my === "W" ? "8" : "1";
-    // Only look at real pawns (not already-promoted, which have a "__pawnN" suffix)
-    const candidates = pieces.filter(
-      (p) => p.color === my && /^pawn\d+$/.test(p.id) && p.square[0] === lastRank
-    );
-    for (const p of candidates) {
-      socket.emit("getAlreadyPromotedPawnOf", playerId, (already: string[]) => {
-        if (!already.includes(p.id)) {
-          const next = [...already, p.id];
-          socket.emit("updateAlreadyPromotedPawnOf", playerId, next);
-          socket.emit("pawnPromotion", playerId, p.id, objPosition(p.square), "queen");
-        }
-      });
-    }
-  }, [pieces, playerId]);
+    if (!import.meta.env.DEV) return;
+    const onDevState = (s: DevSnapshot) => {
+      log.info("useChessGame", `dev: loaded "${s.name}" at ply ${s.ply}/${s.total}`);
+      pendingRef.current = null;
+      legalRef.current = null; // fresh legalMoves follow right after
+      setPieces(s.pieces);
+      setCurrentTurn(s.turn);
+      setMoveRows(s.moveRows);
+      setRecentMove(s.recentMove);
+      setCheckedPlayer(null);
+      setHighlightMoves([]);
+      setHighlightCaptures([]);
+      setSelectedKey(null);
+      setGameOver(null);
+    };
+    socket.on("dev:state", onDevState);
+    return () => {
+      socket.off("dev:state", onDevState);
+    };
+  }, []);
 
   // ---------- Actions exposed to the tree ----------
+
+  const legalTargets = (p: Piece): PosObj[] | null => {
+    const legal = legalRef.current;
+    if (!legal || legal.player !== actingPlayer) return null;
+    return legal.moves[engineId(p.id)] ?? [];
+  };
+
   const selectPiece = useCallback(
     (p: Piece) => {
-      if (p.color !== ownColor(playerId)) return;
-      setSelectedKey(`${p.color}-${p.id}`);
-      socket.emit("pieceFocus", playerId, p.id);
+      if (p.color !== ownColor(actingPlayer)) return;
+      setSelectedKey(pieceKey(p));
+      const targets = legalTargets(p);
+      if (targets) {
+        showTargets(actingPlayer, targets); // instant: no request
+      } else if (!legalRef.current) {
+        socket.emit("pieceFocus", actingPlayer, engineId(p.id)); // older relay
+      } else {
+        setHighlightMoves([]);
+        setHighlightCaptures([]);
+      }
     },
-    [playerId]
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [actingPlayer, showTargets]
   );
 
   const clearSelection = useCallback(() => {
@@ -397,38 +474,73 @@ export function useChessGame(): ChessGame {
   const moveTo = useCallback(
     (sq: SquareId) => {
       if (!selectedKey) return;
-      const [color, id] = selectedKey.split("-") as [PieceColor, string];
-      const piece = piecesRef.current.find((p) => p.color === color && p.id === id);
+      const piece = piecesRef.current.find((p) => pieceKey(p) === selectedKey);
       if (!piece) return;
-      const oldPos = piece.square;
-      if (oldPos === sq) {
+      const from = piece.square;
+      if (from === sq) {
         clearSelection();
         return;
       }
-      socket.emit(
-        "pieceMove",
-        playerId,
-        piece.id,
-        objPosition(oldPos),
-        objPosition(sq)
-      );
       clearSelection();
+      const id = engineId(piece.id);
+      const targets = legalTargets(piece);
+
+      // Older relay (no legalMoves): send and wait, as before.
+      if (!targets) {
+        if (!legalRef.current) socket.emit("pieceMove", actingPlayer, id, objPosition(from), objPosition(sq));
+        return;
+      }
+      if (!targets.some((t) => strPosition(t) === sq)) return; // not a legal square
+
+      // Show the move now; the relay confirms or we roll back.
+      const captured = piecesRef.current.some((p) => p.square === sq);
+      pendingRef.current = {
+        color: piece.color,
+        engineId: id,
+        to: sq,
+        notation: moveNotation(piece.id, sq, captured, from),
+        undo: { pieces: piecesRef.current, recentMove: recentMoveRef.current, legal: legalRef.current },
+      };
+      legalRef.current = null; // no second move until the next turn's list
+      applyMove(piece.color, id, sq);
+      setRecentMove({ from, to: sq });
+      captured ? playCapture() : playMove();
+
+      socket
+        .timeout(ACK_TIMEOUT_MS)
+        .emit("pieceMove", actingPlayer, id, objPosition(from), objPosition(sq), {}, (err: Error | null, res?: { ok: boolean; error?: string }) => {
+          if (!err && res?.ok) return;
+          const pending = pendingRef.current;
+          if (!pending || pending.engineId !== id || pending.to !== sq) return;
+          log.warn("useChessGame", `move ${id} → ${sq} not accepted (${err ? "no answer" : res?.error}); rolling back`);
+          pendingRef.current = null;
+          setPieces(pending.undo.pieces);
+          setRecentMove(pending.undo.recentMove);
+          legalRef.current = pending.undo.legal;
+        });
     },
-    [clearSelection, playerId, selectedKey]
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [actingPlayer, applyMove, clearSelection, selectedKey]
   );
 
   // ---------- Derived: checked king square ----------
   const checkedKingSquare = useMemo<SquareId | null>(() => {
     if (!checkedPlayer) return null;
-    const c: PieceColor = checkedPlayer === PLAYER1 ? "W" : "B";
-    const k = pieces.find((p) => p.color === c && p.id === "king");
+    const k = pieces.find((p) => p.color === colorOf(checkedPlayer) && p.id === "king");
     return k?.square ?? null;
   }, [checkedPlayer, pieces]);
+
+  const setHotSeat = useCallback((on: boolean) => {
+    if (!import.meta.env.DEV) return;
+    sessionStorage.setItem("devHotSeat", String(on));
+    setHotSeatState(on);
+  }, []);
 
   return {
     roomCode,
     isCreator,
     playerId,
+    actingPlayer,
     pieces,
     currentTurn,
     checkedPlayer,
@@ -445,10 +557,13 @@ export function useChessGame(): ChessGame {
     moveTo,
     clearSelection,
     sendChat: (text) => socket.emit("chatText", playerId, text),
-    undo:   () => socket.emit("undo", playerId),
-    redo:   () => socket.emit("redo", playerId),
+    // The engine lets only the player who made the last move undo it (and
+    // redo it). In hot-seat mode that's whoever isn't to move / is to move.
+    undo:   () => socket.emit("undo", hotSeat ? (currentTurn === PLAYER1 ? PLAYER2 : PLAYER1) : playerId),
+    redo:   () => socket.emit("redo", hotSeat ? currentTurn : playerId),
     resign: () => socket.emit("resign", playerId),
     reset:  () => socket.emit("reset", playerId),
     dismissGameOver: () => setGameOver(null),
+    dev: import.meta.env.DEV ? { hotSeat, setHotSeat } : undefined,
   };
 }

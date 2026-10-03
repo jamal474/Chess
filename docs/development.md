@@ -1,11 +1,13 @@
 # Development guide
 
 Everything you need to build, run and debug Chess on your own machine.
-For hosting it somewhere, see the [deployment guide](deployment.md).
+For hosting it somewhere, see the [deployment guide](deployment.md); for how
+the services talk to each other, see [architecture](architecture.md).
 
 - [Prerequisites](#prerequisites)
 - [Build and run](#build-and-run)
 - [Running services individually](#running-services-individually)
+- [Dev tools: jump to any position](#dev-tools-jump-to-any-position)
 - [Make targets](#make-targets)
 - [Environment variables](#environment-variables)
 - [C++ dependencies (Conan 2)](#c-dependencies-conan-2)
@@ -47,6 +49,7 @@ tab, paste the code and play. The `/chess/` prefix is intentional; see
 | Variable | Default | Purpose |
 |---|---|---|
 | `LOG_LEVEL` | `INFO` | Log level shared by all three services |
+| `DEV_TOOLS` | `1` | Dev tools on the relay ([see below](#dev-tools-jump-to-any-position)); `0` turns them off |
 | `NODE_PORT` | `3000` | Node relay port |
 | `CPP_PORT` | `5050` | C++ engine port (see [macOS port 5000](#macos-port-5000)) |
 | `CLIENT_PORT` | `5173` | Vite dev server port |
@@ -64,6 +67,66 @@ cd server && npm install && npm run dev
 # React client
 cd client && npm install && npm run dev
 ```
+
+## Dev tools: jump to any position
+
+Testing what happens after a particular move normally means two browsers, a
+new room and replaying every move by hand. The dev tools skip all of that.
+
+### Start a one-tab game
+
+On the menu (dev only) there's a **Solo game** strip: pick a starting position
+and press **Start solo**. The game starts without a second player, and
+**play both sides** is on, so you move for whoever is to play.
+
+Or link straight to it:
+
+| URL | Opens |
+|---|---|
+| `/chess/?dev=solo` | An empty solo game |
+| `/chess/?dev=scholars-mate` | A saved game, at its default ply |
+| `/chess/?dev=scholars-mate&ply=4` | The same game after 4 half-moves |
+| `…&as=black` | Viewed from Black's side |
+
+### The dev panel
+
+Every game page in dev has a **DEV TOOLS** panel (bottom right) where you can:
+
+- **Load** a saved game or pasted PGN into the current room. This works in a
+  normal two-tab game too; both tabs update.
+- **Step** through the loaded game with ⏮ ◀ ▶ ⏭, the slider, or by clicking
+  any move in the list.
+- **Play both sides** from this tab.
+- **Save this game** as `dev/games/<name>.pgn`, or **copy it as PGN**. Play
+  up to the position you care about, save it, and it's a fixture from then on.
+
+### Saved games
+
+Saved games are PGN files in [`dev/games/`](../dev/games). They're easy to
+write by hand or paste from lichess or chess.com; the
+[format notes](../dev/games/README.md) cover the tags and the moves the engine
+can't do yet (castling, en passant).
+
+### How it works
+
+The relay replays the moves through the **real engine**, one at a time, using
+the same requests a player's move makes (`valid_moves`, `update_position`,
+`pawn_promotion`). Every move is checked against the engine's legal moves, so
+the position you land on is exactly what playing those moves would produce. A
+move the engine rejects stops the load there, and the panel shows which move
+failed and why. Then it sends both tabs a single board snapshot.
+
+### Kept out of production
+
+| Layer | How |
+|---|---|
+| Relay | `server/src/dev/` loads only when `DEV_TOOLS=1` **and** `NODE_ENV` isn't `production`. `make run` sets `DEV_TOOLS=1`; the server image sets `NODE_ENV=production`. |
+| Server image | `server/.dockerignore` excludes `src/dev`, so the code isn't in the image at all. |
+| Client | `client/src/dev/` is only reached through `import.meta.env.DEV` branches, which Vite removes from `npm run build`. |
+| Fixtures | `dev/games/` sits outside every Docker build context. |
+
+To run the relay with the tools outside `make run`: `DEV_TOOLS=1 npm run dev`
+in `server/`.
 
 ## Make targets
 

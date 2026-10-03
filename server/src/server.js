@@ -76,10 +76,12 @@ function main() {
 
   const engine = new GameEngine({ io, rooms, cppClient });
   const deps = { io, rooms, engine };
+  const devTools = loadDevTools({ io, rooms, engine, cppClient });
 
   io.on("connection", (socket) => {
     log.debug("io", `connect ${socket.id}`);
     attachSocketHandlers(socket, deps);
+    if (devTools) devTools.attach(socket);
   });
 
   httpServer.listen(config.PORT, config.HOST, () => {
@@ -92,6 +94,19 @@ function main() {
   });
 
   installShutdownHandlers({ io, httpServer });
+}
+
+// Dev tools are required lazily so production never loads them (and the
+// Docker image doesn't contain them; see server/.dockerignore).
+function loadDevTools(deps) {
+  if (!config.DEV_TOOLS) return null;
+  try {
+    const { createDevTools } = require("./dev");
+    return createDevTools({ ...deps, gamesDir: config.DEV_GAMES_DIR || undefined });
+  } catch (err) {
+    log.error("dev", `DEV_TOOLS=1 but the dev tools failed to load: ${err.message}`);
+    return null;
+  }
 }
 
 function installShutdownHandlers({ io, httpServer }) {

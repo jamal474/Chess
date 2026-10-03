@@ -15,7 +15,10 @@ import Square from "./Square";
 import ChessPiece, { ChessPieceOverlay } from "./ChessPiece";
 
 type Props = {
+  /** Orientation: the board is drawn from this player's side. */
   playerId: PlayerId;
+  /** Whose pieces can be dragged. Defaults to playerId (differs only in dev hot-seat mode). */
+  activePlayerId?: PlayerId;
   pieces: Piece[];
   highlightMoves: SquareId[];
   highlightCaptures: SquareId[];
@@ -36,6 +39,7 @@ const colsFor = (p: PlayerId): number[] =>
 
 export default function Board({
   playerId,
+  activePlayerId = playerId,
   pieces,
   highlightMoves,
   highlightCaptures,
@@ -123,7 +127,7 @@ export default function Board({
                           piece={piece}
                           draggable={
                             !disabled &&
-                            piece.color === (playerId === PLAYER1 ? "W" : "B")
+                            piece.color === (activePlayerId === PLAYER1 ? "W" : "B")
                           }
                           selected={selected}
                           onSelect={() => onSelectPiece(piece)}

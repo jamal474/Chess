@@ -1,10 +1,13 @@
-import { useState } from "react";
+import { lazy, Suspense, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { socket } from "../lib/socket";
 import { log } from "../lib/logger";
 import { PLAYER1, PLAYER2, type PlayerId } from "../lib/types";
 import FloatingPieces from "../components/FloatingPieces";
 import NationalityBadge from "../components/NationalityBadge";
+
+// Dev-only "solo game" launcher; removed from production builds.
+const DevMenu = import.meta.env.DEV ? lazy(() => import("../dev/DevMenu")) : null;
 
 type Color = "White" | "Black" | "Random";
 
@@ -155,6 +158,12 @@ export default function Menu() {
             </section>
           </div>
         </main>
+
+        {DevMenu && (
+          <Suspense fallback={null}>
+            <DevMenu />
+          </Suspense>
+        )}
 
         <footer className="border-t-3 border-black bg-black text-white px-6 py-3 flex items-center justify-between text-xs font-mono uppercase tracking-wider">
           <span>&copy; {new Date().getFullYear()}</span>

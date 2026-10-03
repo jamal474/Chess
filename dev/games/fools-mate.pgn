@@ -1,0 +1,5 @@
+[Event "Fool's mate"]
+[Description "Black to play Qh4#. Checkmate delivered by Black."]
+[Ply "3"]
+
+1. f3 e5 2. g4 Qh4# *

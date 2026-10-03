@@ -18,6 +18,17 @@ export function pieceKey(p: { color: PieceColor; id: string }) {
   return `${p.color}-${p.id}`;
 }
 
+// A promoted pawn keeps its engine id ("pawn3") but is rendered as its new
+// kind with the pawn id as suffix ("queen__pawn3"). The relay and engine only
+// ever speak engine ids.
+export function engineId(id: string): string {
+  const i = id.indexOf("__");
+  return i === -1 ? id : id.slice(i + 2);
+}
+export function isPiece(p: { color: PieceColor; id: string }, color: PieceColor, engineIdOrId: string) {
+  return p.color === color && (p.id === engineIdOrId || engineId(p.id) === engineIdOrId);
+}
+
 export function strPosition(pos: { x: number; y: number }): SquareId {
   return `${pos.x}${pos.y}`;
 }
@@ -57,7 +68,8 @@ export function initialPieces(): Piece[] {
 }
 
 // Move-log entry (Standard Algebraic Notation, without disambiguators).
-export function moveNotation(pieceId: string, newPos: SquareId, captured: boolean): string {
+// Pawn captures name the file they came from ("exd5"), so pass `from`.
+export function moveNotation(pieceId: string, newPos: SquareId, captured: boolean, from?: SquareId): string {
   const row = newPos[0];
   const col = Number(newPos[1]);
   const colAlpha = String.fromCharCode(96 + col); // 1->a, 2->b, ...
@@ -69,5 +81,6 @@ export function moveNotation(pieceId: string, newPos: SquareId, captured: boolea
   else if (pieceId.startsWith("rook")) ch = "R";
   else if (pieceId.startsWith("queen")) ch = "Q";
   else if (pieceId.startsWith("king")) ch = "K";
-  return ch + cap + target;
+  const pawnFile = !ch && captured && from ? String.fromCharCode(96 + Number(from[1])) : "";
+  return ch + pawnFile + cap + target;
 }

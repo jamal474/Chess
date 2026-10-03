@@ -3,3 +3,5 @@ npm-debug.log
 .env
 .env.*
 Dockerfile
+# Dev-only tools (see src/dev/index.js); never shipped.
+src/dev

@@ -2,26 +2,21 @@ const { SOCKET_EVENT } = require("../constants");
 const { log } = require("../logger");
 
 /**
- * Pawn promotion has three events:
- *   * pawnPromotion — client asks the engine to promote a pawn.
- *   * updateAlreadyPromotedPawnOf / getAlreadyPromotedPawnOf — the client
- *     mirrors the "who's already been auto-promoted?" list on the server
- *     side so undo/redo can restore it correctly.
+ * Pawn promotion now happens inside the move itself: the engine promotes a
+ * pawn that reaches the last rank (to a queen, or to options.promotion on
+ * pieceMove) and the relay broadcasts serverPawnPromotion with the move.
+ *
+ * These handlers remain only so a browser still running an older bundle
+ * doesn't break: the promote request is ignored (the pawn is already
+ * promoted) and the "already promoted" list is served from the relay's own
+ * record.
  */
-function attachPromotionHandlers(socket, { rooms, engine }) {
-  socket.on(SOCKET_EVENT.PAWN_PROMOTION, (playerId, pieceId, position, newPieceId) => {
-    const roomId = rooms.roomIdFor(socket.id);
-    if (!roomId) return;
-    log.debug("promotion", `promote ${playerId} ${pieceId} → ${newPieceId} in room=${roomId}`);
-    engine.pawnPromotion(roomId, playerId, pieceId, position, newPieceId);
+function attachPromotionHandlers(socket, { rooms }) {
+  socket.on(SOCKET_EVENT.PAWN_PROMOTION, (playerId, pieceId) => {
+    log.debug("promotion", `ignoring legacy pawnPromotion ${playerId} ${pieceId}; the engine promotes on the move`);
   });
 
-  socket.on(SOCKET_EVENT.UPDATE_ALREADY_PROMOTED_PAWN_OF, (playerId, list) => {
-    const roomId = rooms.roomIdFor(socket.id);
-    if (!roomId) return;
-    rooms.setAlreadyPromoted(roomId, playerId, list);
-    log.trace("promotion", `set list room=${roomId} player=${playerId} list=${JSON.stringify(list)}`);
-  });
+  socket.on(SOCKET_EVENT.UPDATE_ALREADY_PROMOTED_PAWN_OF, () => {});
 
   socket.on(SOCKET_EVENT.GET_ALREADY_PROMOTED_PAWN_OF, (playerId, cb) => {
     if (typeof cb !== "function") return;

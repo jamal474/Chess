@@ -43,7 +43,7 @@ rules are enforced on the server rather than trusted to the browser.
 ```mermaid
 flowchart LR
     A[Browser<br/>React client] <-- Socket.IO --> B[Node relay<br/>Express + Socket.IO]
-    B <-- HTTP / JSON --> C[Game engine<br/>C++17 + Asio]
+    B <-- TCP / JSON lines --> C[Game engine<br/>C++17 + Asio]
 ```
 
 | Part | Folder | Role |
@@ -70,6 +70,7 @@ in one and join it from the other.
 |---|---|
 | [Development](docs/development.md) | Local setup, running services individually, Conan, environment variables, troubleshooting |
 | [Deployment](docs/deployment.md) | Docker Compose on a VM, Railway, and serving the app under a sub-path |
+| [Architecture](docs/architecture.md) | How the services fit together, the life of a game and a move, the engine protocol, failure handling |
 | [Contributing](.github/CONTRIBUTING.md) | How to report bugs, propose changes and open a pull request |
 
 ## Contributing

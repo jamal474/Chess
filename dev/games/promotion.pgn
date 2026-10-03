@@ -1,0 +1,5 @@
+[Event "Pawn promotion"]
+[Description "White's b7 pawn is ready to take on a8 and promote (bxa8=Q)."]
+[Ply "8"]
+
+1. a4 b5 2. axb5 a6 3. bxa6 Bb7 4. axb7 Nc6 5. bxa8=Q *
