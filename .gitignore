@@ -43,7 +43,7 @@ client/.vite/
 # ---- Old auth-era code, kept for reference. Ignored by git; delete when comfortable. ----
 _legacy/
 
-# Files moved aside for the user to delete manually (see readme).
+# Files moved aside for the user to delete manually.
 _to_delete/
 
 # Conan 2 generated files inside cppServer/build/

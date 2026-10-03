@@ -21,8 +21,8 @@ LOG_LEVEL="${LOG_LEVEL:-INFO}"
 NODE_PORT="${NODE_PORT:-3000}"
 CPP_PORT="${CPP_PORT:-5050}"    # macOS AirPlay Receiver takes 5000
 CLIENT_PORT="${CLIENT_PORT:-5173}"
-# The client is built and served under a sub-path (see "Mount path" in the
-# readme); vite's dev server honours it too, so the URL below carries it.
+# The client is built and served under a sub-path (see "Mount path" in
+# docs/deployment.md); vite's dev server honours it too, so the URL below carries it.
 APP_BASE="${APP_BASE:-/chess}"
 
 # Prefix helper: line-buffers stdin and writes `[<name>] <line>` in a color.
