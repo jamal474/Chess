@@ -70,7 +70,7 @@ in one and join it from the other.
 |---|---|
 | [Development](docs/development.md) | Local setup, running services individually, Conan, environment variables, troubleshooting |
 | [Deployment](docs/deployment.md) | Docker Compose on a VM, Railway, and serving the app under a sub-path |
-| [Architecture](docs/architecture.md) | How a move flows between browser, relay and engine, and the engine protocol |
+| [Architecture](docs/architecture.md) | How the services fit together, the life of a game and a move, the engine protocol, failure handling |
 | [Contributing](.github/CONTRIBUTING.md) | How to report bugs, propose changes and open a pull request |
 
 ## Contributing
