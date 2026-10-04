@@ -107,6 +107,9 @@ const SOCKET_EVENT = Object.freeze({
   // ({ reason, requeued }) — the other player never showed up. requeued: you
   // are back at the front of the queue.
   MATCH_CANCELLED:       "match:cancelled",
+  // (winnerPlayerId) — a matchmade game ended because the other player
+  // dropped out and wasn't back within ABANDON_GRACE_MS.
+  SERVER_ABANDON:        "serverAbandon",
 });
 
 // Chat text is clipped to this length before broadcast — defence-in-depth
@@ -129,8 +132,13 @@ const LOBBY_STATS_INTERVAL_MS = 1500;
 // socket.io room of sockets that want the lobby counts.
 const LOBBY_ROOM = "lobby";
 
+// Matchmade games: a player who loses their connection has this long to come
+// back before the game is awarded to their opponent. (Leaving on purpose
+// forfeits at once.)
+const ABANDON_GRACE_MS = 30000;
+
 module.exports = {
   PLAYER, CPP_REQ, STATUS, MATE_STATUS, SOCKET_EVENT,
   MAX_CHAT_LENGTH, MAX_NAME_LENGTH, MAX_UNDOS, UNDO_REQUEST_TIMEOUT_MS,
-  MATCH_CLAIM_TIMEOUT_MS, LOBBY_STATS_INTERVAL_MS, LOBBY_ROOM,
+  MATCH_CLAIM_TIMEOUT_MS, LOBBY_STATS_INTERVAL_MS, LOBBY_ROOM, ABANDON_GRACE_MS,
 };

@@ -17,7 +17,7 @@ import { useMatchmaking } from "../hooks/useMatchmaking";
 import { enterMatch, enterPrivateRoom } from "../lib/session";
 
 /** What the game page hands back when a match was called off. */
-type MenuState = { searchingSince?: number; message?: string } | null;
+type MenuState = { searchingSince?: number; message?: string; findNow?: boolean } | null;
 
 // Dev-only "solo game" launcher; removed from production builds.
 const DevMenu = import.meta.env.DEV ? lazy(() => import("../dev/DevMenu")) : null;
@@ -62,6 +62,8 @@ export default function Menu() {
   const [searchAfterSave, setSearchAfterSave] = useState(false);
   useEffect(() => {
     if (handed?.message) match.notify(handed.message);
+    // "Play again" from a finished matchmade game.
+    if (handed?.findNow && readName().trim()) match.find({ name: readName().trim(), country });
     // Consume the hand-over so a refresh doesn't replay it.
     if (handed) nav(".", { replace: true, state: null });
     // eslint-disable-next-line react-hooks/exhaustive-deps

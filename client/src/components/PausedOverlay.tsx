@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 const LBL = "text-[11px] font-bold tracking-[0.12em] uppercase";
 
@@ -70,6 +70,43 @@ export default function PausedOverlay({
           >
             {copied ? "✓ COPIED" : "COPY"}
           </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Matchmade games: the opponent's connection dropped. They have until
+ * `deadline` (local ms) to come back, otherwise you win.
+ */
+export function GraceOverlay({ who, deadline }: { who: string | null; deadline: number }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const t = window.setInterval(() => setNow(Date.now()), 250);
+    return () => window.clearInterval(t);
+  }, []);
+  const left = Math.max(0, Math.ceil((deadline - now) / 1000));
+  const clock = `${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}`;
+
+  return (
+    <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/70 p-4">
+      <div role="status" aria-live="polite" className="w-full max-w-[400px] border-3 border-black shadow-brut-lg bg-white">
+        <div className="flex items-center justify-between gap-3 px-3.5 py-2.5 bg-black text-white">
+          <span className={LBL}>OPPONENT DISCONNECTED</span>
+          <span className="flex items-center gap-1.5 font-mono text-xs opacity-80">
+            <span className="inline-block w-2 h-2 bg-accent animate-pulse" aria-hidden="true" />
+            WAITING
+          </span>
+        </div>
+        <div className="flex flex-col items-center gap-2 px-4 sm:px-6 pt-5 pb-6 text-center">
+          <p className="m-0 font-display text-xl sm:text-2xl leading-tight uppercase break-words">
+            {who ? `${who} lost connection` : "Your opponent lost connection"}
+          </p>
+          <span className="font-mono text-5xl font-bold tabular-nums leading-none py-2">{clock}</span>
+          <p className="m-0 text-sm leading-snug">
+            The clock is stopped. If they&apos;re not back by then, <b>you win</b>.
+          </p>
         </div>
       </div>
     </div>

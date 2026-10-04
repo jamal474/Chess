@@ -171,7 +171,7 @@ export function useChessGame(): ChessGame {
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   const [moveRows, setMoveRows] = useState<MoveRow[]>([]);
-  const [result, setResult] = useState<GameResult | null>(null);
+  const [result, setResultState] = useState<GameResult | null>(null);
   const [started, setStarted] = useState(false);
   const [profiles, setProfiles] = useState<Profiles>(NO_PROFILES);
   const [undoState, setUndoState] = useState<UndoState>(FRESH_UNDO);
@@ -204,6 +204,12 @@ export function useChessGame(): ChessGame {
   const pendingRef = useRef<PendingMove | null>(null);
   const resultRef = useRef<GameResult | null>(null);
   resultRef.current = result;
+  // Updates the ref at once too: a presence update right behind the result
+  // (same tick) must already see the game as over, or the clock restarts.
+  const setResult = useCallback((r: GameResult | null) => {
+    resultRef.current = r;
+    setResultState(r);
+  }, []);
 
   // ---------- Low-level piece mutation ----------
 
@@ -515,6 +521,14 @@ export function useChessGame(): ChessGame {
     socket.on("serverRedo", onServerRedo);
     socket.on("serverProfiles", onServerProfiles);
     socket.on("serverUndoState", onServerUndoState);
+    const onAbandon = (winner: PlayerId) => {
+      timerRef.current.stop();
+      legalRef.current = null;
+      log.info("useChessGame", `game abandoned, ${winner} wins`);
+      setResult({ kind: "abandon", winner });
+      playNotify();
+    };
+    socket.on("serverAbandon", onAbandon);
     const onMatchCancelled = (r: { requeued: boolean }) => setMatchCancelled({ requeued: Boolean(r?.requeued) });
     socket.on("match:cancelled", onMatchCancelled);
     socket.on("serverPresence", onPresence);
@@ -538,10 +552,11 @@ export function useChessGame(): ChessGame {
       socket.off("serverProfiles", onServerProfiles);
       socket.off("serverUndoState", onServerUndoState);
       socket.off("match:cancelled", onMatchCancelled);
+      socket.off("serverAbandon", onAbandon);
       socket.off("serverPresence", onPresence);
       socket.off("serverSnapshot", onSnapshot);
     };
-  }, [addMoveRow, applyMove, playerId, setPieceSquare, showTargets]);
+  }, [addMoveRow, applyMove, playerId, setPieceSquare, setResult, showTargets]);
 
   // ---------- Dev: apply a board snapshot after the relay loads a game ----------
   useEffect(() => {

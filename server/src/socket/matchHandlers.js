@@ -1,6 +1,6 @@
 const { SOCKET_EVENT } = require("../constants");
 const { log } = require("../logger");
-const { cleanProfile } = require("./roomHandlers");
+const { cleanProfile, leaveRoom } = require("./roomHandlers");
 
 /**
  * Lobby counts and the matchmaking queue:
@@ -10,7 +10,8 @@ const { cleanProfile } = require("./roomHandlers");
  *       match:found to both players.
  *   * queue:leave — stop searching.
  */
-function attachMatchHandlers(socket, { rooms, matchmaker, lobby }) {
+function attachMatchHandlers(socket, deps) {
+  const { rooms, matchmaker, lobby } = deps;
   const reply = (cb, v) => typeof cb === "function" && cb(v);
 
   socket.on(SOCKET_EVENT.LOBBY_SUBSCRIBE, (cb) => reply(cb, { ok: true, stats: lobby.subscribe(socket) }));
@@ -19,7 +20,9 @@ function attachMatchHandlers(socket, { rooms, matchmaker, lobby }) {
   socket.on(SOCKET_EVENT.QUEUE_JOIN, (profile, cb) => {
     const clean = cleanProfile(profile);
     if (!clean) return reply(cb, { ok: false, error: "a name is needed to play" });
-    if (rooms.roomIdFor(socket.id)) return reply(cb, { ok: false, error: "already in a game" });
+    // Searching means you're done with whatever room you were in ("Play
+    // again" from a finished game). Leaving a game in progress resigns it.
+    if (rooms.roomIdFor(socket.id)) leaveRoom(socket, deps, { explicit: true });
     const status = matchmaker.join(socket, clean);
     reply(cb, { ok: true, status });
   });

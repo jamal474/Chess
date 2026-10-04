@@ -77,6 +77,7 @@ class RoomRegistry {
 
   dispose(roomId) {
     this.clearPendingUndo(roomId);
+    this.clearAbandon(roomId);
     if (this._rooms.delete(roomId)) log.debug("rooms", `dispose room=${roomId}`);
   }
 
@@ -100,6 +101,7 @@ class RoomRegistry {
     room.players[PLAYER.PLAYER1] = { moveMap: {}, alreadyPromotedPawns: [] };
     room.players[PLAYER.PLAYER2] = { moveMap: {}, alreadyPromotedPawns: [] };
     this.clearPendingUndo(roomId);
+    this.clearAbandon(roomId);
     room.undo = freshUndo();
     room.over = false;
     room.moves = [];
@@ -277,6 +279,31 @@ class RoomRegistry {
     room.clock.stoppedAt = room.clock.pausedAt ?? Date.now();
   }
 
+  // ---------- abandonment (matchmade games) ----------
+
+  /** Starts the countdown after which `seat` loses for not coming back. */
+  setAbandon(roomId, seat, deadline, timer) {
+    const room = this._rooms.get(roomId);
+    if (!room) return clearTimeout(timer);
+    this.clearAbandon(roomId);
+    room.abandon = { seat, deadline, timer };
+  }
+
+  /** Returns the countdown that was running (and stops it), or null. */
+  clearAbandon(roomId) {
+    const room = this._rooms.get(roomId);
+    const a = room?.abandon ?? null;
+    if (a) {
+      clearTimeout(a.timer);
+      room.abandon = null;
+    }
+    return a;
+  }
+
+  abandoning(roomId) {
+    return this._rooms.get(roomId)?.abandon ?? null;
+  }
+
   /** What the browsers are told about who's here. */
   presence(roomId, left = null) {
     const room = this._rooms.get(roomId);
@@ -289,6 +316,8 @@ class RoomRegistry {
       paused: room.paused,
       left,
       elapsed: this.elapsed(roomId),
+      // ms until an absent player in a matchmade game loses, if counting down.
+      abandonIn: room.abandon ? Math.max(0, room.abandon.deadline - Date.now()) : null,
     };
   }
 

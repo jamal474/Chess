@@ -16,6 +16,10 @@ type Props = {
   onRematch: () => void;
   onMenu: () => void;
   onClose: () => void;
+  /** Matchmade games: offer a new random opponent. */
+  onPlayAgain?: () => void;
+  /** Rematch needs the opponent still in the room. */
+  canRematch?: boolean;
 };
 
 /** End of game: both players side by side, the winner crowned. */
@@ -30,13 +34,19 @@ export default function GameOverDialog({
   onRematch,
   onMenu,
   onClose,
+  onPlayAgain,
+  canRematch = true,
 }: Props) {
   if (!open) return null;
   const winner = result.winner;
   const title = !winner ? "DRAW" : winner === me ? "YOU WIN" : `${nameOf(winner)} WINS`;
-  const how =
-    result.kind === "checkmate" ? "BY CHECKMATE" : result.kind === "resign" ? "BY RESIGNATION" : "STALEMATE";
-  const loserNote = result.kind === "resign" ? "RESIGNED" : "CHECKMATED";
+  const how = {
+    checkmate: "BY CHECKMATE",
+    resign: "BY RESIGNATION",
+    abandon: "BY ABANDONMENT",
+    stalemate: "STALEMATE",
+  }[result.kind];
+  const loserNote = { checkmate: "CHECKMATED", resign: "RESIGNED", abandon: "LEFT", stalemate: "DRAW" }[result.kind];
 
   const card = (p: PlayerId) => {
     const isWinner = winner === p;
@@ -106,9 +116,22 @@ export default function GameOverDialog({
           <button type="button" onClick={onMenu} className="btn">
             BACK TO MENU
           </button>
-          <button type="button" autoFocus onClick={onRematch} className="btn btn-accent">
-            REMATCH →
-          </button>
+          {onPlayAgain ? (
+            <>
+              {canRematch && (
+                <button type="button" onClick={onRematch} className="btn">
+                  REMATCH
+                </button>
+              )}
+              <button type="button" autoFocus onClick={onPlayAgain} className="btn btn-accent">
+                PLAY AGAIN →
+              </button>
+            </>
+          ) : (
+            <button type="button" autoFocus onClick={onRematch} disabled={!canRematch} className="btn btn-accent">
+              REMATCH →
+            </button>
+          )}
         </div>
       </div>
     </div>

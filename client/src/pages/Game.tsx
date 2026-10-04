@@ -14,7 +14,7 @@ import NamePrompt from "../components/NamePrompt";
 import GameOverDialog from "../components/GameOverDialog";
 import { UndoNotice, UndoPendingBar, UndoRequestDialog } from "../components/UndoOverlay";
 import { useNationality } from "../components/NationalityBadge";
-import PausedOverlay from "../components/PausedOverlay";
+import PausedOverlay, { GraceOverlay } from "../components/PausedOverlay";
 import { readName, saveProfile } from "../lib/identity";
 import { clearMatch } from "../lib/session";
 
@@ -170,6 +170,12 @@ export default function Game() {
   if (game.profiles[opp]?.name) lastOppName.current = game.profiles[opp]!.name.toUpperCase();
   const oppAway = game.started && Boolean(game.presence) && !game.presence!.seats[opp];
   const paused = Boolean(game.presence?.paused);
+  // Matchmade: the absent opponent's deadline, from when the presence arrived.
+  const [abandonDeadline, setAbandonDeadline] = useState<number | null>(null);
+  useEffect(() => {
+    const ms = game.presence?.abandonIn;
+    setAbandonDeadline(typeof ms === "number" ? Date.now() + ms : null);
+  }, [game.presence]);
   const [presenceNotice, setPresenceNotice] = useState<{ text: string; at: number } | null>(null);
   const wasAway = useRef(false);
   useEffect(() => {
@@ -321,7 +327,11 @@ export default function Game() {
               waiting={!game.started || oppAway}
               waitingText={
                 oppAway
-                  ? `${lastOppName.current ?? "OPPONENT"} LEFT · WAITING…`
+                  ? game.isMatch
+                    ? result
+                      ? `${lastOppName.current ?? "OPPONENT"} LEFT`
+                      : `${lastOppName.current ?? "OPPONENT"} DISCONNECTED…`
+                    : `${lastOppName.current ?? "OPPONENT"} LEFT · WAITING…`
                   : game.isMatch
                   ? `CONNECTING TO ${lastOppName.current ?? "OPPONENT"}…`
                   : undefined
@@ -368,7 +378,10 @@ export default function Game() {
               )}
               {!pending && <UndoNotice text={notice} at={game.undoEvent?.at ?? 0} />}
               {presenceNotice && !oppAway && <UndoNotice text={presenceNotice.text} at={presenceNotice.at} />}
-              {oppAway && !needName && (
+              {oppAway && game.isMatch && !result && abandonDeadline !== null && (
+                <GraceOverlay who={lastOppName.current} deadline={abandonDeadline} />
+              )}
+              {oppAway && !game.isMatch && !needName && (
                 <PausedOverlay
                   who={lastOppName.current}
                   roomCode={game.roomCode}
@@ -500,6 +513,16 @@ export default function Game() {
             game.reset();
           }}
           onMenu={() => nav("/")}
+          canRematch={!oppAway}
+          onPlayAgain={
+            game.isMatch
+              ? () => {
+                  // Straight back into the queue; the relay takes us out of this room.
+                  clearMatch();
+                  nav("/", { state: { findNow: true } });
+                }
+              : undefined
+          }
           onClose={() => setResultClosed(true)}
         />
       )}
