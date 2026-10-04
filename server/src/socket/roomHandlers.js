@@ -1,31 +1,41 @@
-const { PLAYER, SOCKET_EVENT, MAX_NAME_LENGTH } = require("../constants");
+const { PLAYER, SOCKET_EVENT, MAX_NAME_LENGTH, ABANDON_GRACE_MS } = require("../constants");
 const { log } = require("../logger");
 const { buildSnapshot } = require("../state/snapshot");
+const { rateLimit, LIMITS } = require("./rateLimit");
 
 /**
  * Room lifecycle over socket.io:
  *   * roomExistsCheck — the join dialog on the menu page asks whether a code
  *     is joinable and which seat it'd take.
  *   * createRoom      — one player claims a code and picks a colour.
- *   * joinRoom        — a player takes the empty seat. In a fresh room that
+ *   * joinRoom        — a player takes the empty seat (in a matchmade room,
+ *                       the seat their ticket reserves). In a fresh room that
  *                       kicks the engine into setting up the board (it then
  *                       broadcasts startGame). In a game already under way
  *                       the newcomer is sent the position and play resumes.
- *   * leaveRoom       — a player leaves the game page (a closed tab or lost
- *                       connection counts the same, see leaveRoom() below).
- *                       A game in progress pauses until the seat is taken.
+ *   * leaveRoom       — a player leaves the game page. A game in progress
+ *                       pauses until the seat is taken (private rooms), or
+ *                       is forfeited (matchmade rooms). A lost connection is
+ *                       handled the same way, except that in a matchmade
+ *                       room it gets ABANDON_GRACE_MS to come back first.
  *   * setProfile      — a player names themselves (and their country); the
  *                       room gets both profiles back as serverProfiles.
  */
 function attachRoomHandlers(socket, deps) {
   const { io, rooms, engine } = deps;
+  const allowRoomCheck = rateLimit(socket, "roomCheck", LIMITS.roomCheck);
 
   socket.on(SOCKET_EVENT.ROOM_EXISTS_CHECK, (roomId, cb) => {
     const respond = (canJoin, joinerPlayerId) =>
       typeof cb === "function" && cb(canJoin, joinerPlayerId || "");
     try {
+      if (!allowRoomCheck()) {
+        log.warn("room.exists", `socket=${socket.id} rate-limited`);
+        return respond(false, "");
+      }
       if (!isValidRoomId(roomId)) return respond(false, "");
-      const seat = rooms.has(roomId) ? rooms.freeSeat(roomId) : null;
+      // Matchmade rooms are reserved for their two players.
+      const seat = rooms.has(roomId) && !rooms.match(roomId) ? rooms.freeSeat(roomId) : null;
       const canJoin = Boolean(seat) && rooms.occupied(roomId) >= 1;
       log.debug("room.exists", `room=${roomId} canJoin=${canJoin} seat=${seat ?? "-"}`);
       respond(canJoin, canJoin ? seat : "");
@@ -42,6 +52,7 @@ function attachRoomHandlers(socket, deps) {
     if (rooms.roomIdFor(socket.id) === roomId) return; // already here (page re-mounted)
 
     if (rooms.has(roomId)) {
+      if (rooms.match(roomId)) return log.warn("room.create", `room=${roomId} is matchmade; use joinRoom with a ticket`);
       // The creator reloading the page: their seat is free again, take it back.
       if (rooms.isSeatFree(roomId, chosenPlayerId) && rooms.occupied(roomId) > 0) {
         log.info("room.create", `socket=${socket.id} back in room=${roomId} as ${chosenPlayerId}`);
@@ -50,7 +61,7 @@ function attachRoomHandlers(socket, deps) {
       return log.warn("room.create", `duplicate roomId=${roomId}`);
     }
 
-    leaveRoom(socket, deps); // from any room this socket was still in
+    leaveRoom(socket, deps, { explicit: true }); // from any room this socket was still in
     socket.join(roomId);
     rooms.create(roomId, chosenPlayerId);
     rooms.bindSocket(socket.id, roomId);
@@ -58,20 +69,28 @@ function attachRoomHandlers(socket, deps) {
     log.info("room.create", `socket=${socket.id} created room=${roomId} as ${chosenPlayerId} (rooms=${rooms.size()})`);
   });
 
-  socket.on(SOCKET_EVENT.JOIN_ROOM, (roomId) => {
+  // joinRoom(roomId, [ticket]) — the ticket is required for a matchmade room.
+  socket.on(SOCKET_EVENT.JOIN_ROOM, (roomId, ticket) => {
     if (!isValidRoomId(roomId)) return log.warn("room.join", `bad roomId=${JSON.stringify(roomId)}`);
     if (rooms.roomIdFor(socket.id) === roomId) return; // already here (page re-mounted)
     if (!rooms.has(roomId)) return log.warn("room.join", `room=${roomId} does not exist`);
-    const seat = rooms.freeSeat(roomId);
-    if (!seat) return log.warn("room.join", `room=${roomId} already full`);
+    let seat;
+    if (rooms.match(roomId)) {
+      seat = rooms.seatForTicket(roomId, ticket);
+      if (!seat) return log.warn("room.join", `room=${roomId} is matchmade and the ticket doesn't fit`);
+      if (!rooms.isSeatFree(roomId, seat)) return log.warn("room.join", `room=${roomId} seat ${seat} is taken`);
+    } else {
+      seat = rooms.freeSeat(roomId);
+      if (!seat) return log.warn("room.join", `room=${roomId} already full`);
+    }
     takeSeat(roomId, seat);
   });
 
-  socket.on(SOCKET_EVENT.LEAVE_ROOM, () => leaveRoom(socket, deps));
+  socket.on(SOCKET_EVENT.LEAVE_ROOM, () => leaveRoom(socket, deps, { explicit: true }));
 
   /** Sits this socket in `seat` and starts, resumes or restarts the game as needed. */
   async function takeSeat(roomId, seat) {
-    leaveRoom(socket, deps);
+    leaveRoom(socket, deps, { explicit: true });
     socket.join(roomId);
     rooms.bindSocket(socket.id, roomId);
     rooms.sit(roomId, seat, socket.id);
@@ -79,6 +98,7 @@ function attachRoomHandlers(socket, deps) {
 
     // The newcomer needs whatever the other player already told us about themselves.
     io.to(roomId).emit(SOCKET_EVENT.SERVER_PROFILES, rooms.profiles(roomId));
+    if (rooms.match(roomId)) deps.matchmaker?.seated(roomId);
 
     if (!rooms.isStarted(roomId)) {
       // Fresh room: the engine's answer fires `startGame` on both sockets.
@@ -87,6 +107,19 @@ function attachRoomHandlers(socket, deps) {
     }
 
     rooms.setPaused(roomId, false);
+    const back = rooms.clearAbandon(roomId); // a matched player made it back in time
+
+    if (rooms.isOver(roomId) && rooms.match(roomId)) {
+      // A matched player reloading a finished game: show it as it ended.
+      socket.emit(SOCKET_EVENT.SERVER_SNAPSHOT, {
+        ...buildSnapshot(rooms.moves(roomId)),
+        turn: rooms.currentTurn(roomId),
+        elapsed: rooms.elapsed(roomId),
+        result: rooms.result(roomId),
+      });
+      io.to(roomId).emit(SOCKET_EVENT.SERVER_PRESENCE, rooms.presence(roomId));
+      return;
+    }
 
     if (rooms.isOver(roomId)) {
       // The last game had ended: a new opponent gets a new game.
@@ -99,7 +132,8 @@ function attachRoomHandlers(socket, deps) {
     }
 
     // Game under way: hand the newcomer the position and carry on.
-    rooms.resetUndos(roomId, seat);
+    // (A matched player coming back keeps their undo count.)
+    if (!rooms.match(roomId)) rooms.resetUndos(roomId, seat);
     const snapshot = buildSnapshot(rooms.moves(roomId));
     socket.emit(SOCKET_EVENT.SERVER_SNAPSHOT, {
       ...snapshot,
@@ -108,7 +142,7 @@ function attachRoomHandlers(socket, deps) {
     });
     io.to(roomId).emit(SOCKET_EVENT.SERVER_UNDO_STATE, rooms.undoState(roomId), null);
     io.to(roomId).emit(SOCKET_EVENT.SERVER_PRESENCE, rooms.presence(roomId));
-    log.info("room.join", `room=${roomId} resumed at ply ${rooms.moves(roomId).length} with a new ${seat}`);
+    log.info("room.join", `room=${roomId} resumed at ply ${rooms.moves(roomId).length} with ${back ? "returning" : "a new"} ${seat}`);
     // Legal moves and check status for whoever is to move.
     await engine.refreshTurn(roomId);
   }
@@ -130,8 +164,13 @@ function attachRoomHandlers(socket, deps) {
  * Takes `socket` out of its room, if it's in one. The last one out disposes
  * of the room (and the engine's board). Otherwise the other player is told,
  * and a game in progress is paused until someone takes the seat.
+ *
+ * Matchmade rooms have no one else to take the seat, so a game in progress
+ * ends instead: leaving on purpose (`explicit`) resigns it, and a lost
+ * connection starts an ABANDON_GRACE_MS countdown, after which the player
+ * who stayed wins. Coming back with the ticket in time resumes the game.
  */
-function leaveRoom(socket, { io, rooms, engine }) {
+function leaveRoom(socket, { io, rooms, engine }, { explicit = false } = {}) {
   const roomId = rooms.unbindSocket(socket.id);
   if (!roomId) return null;
   socket.leave(roomId);
@@ -144,13 +183,43 @@ function leaveRoom(socket, { io, rooms, engine }) {
     return roomId;
   }
 
+  const matched = Boolean(rooms.match(roomId));
+  const inProgress = rooms.isStarted(roomId) && !rooms.isOver(roomId);
   if (rooms.isStarted(roomId)) {
     if (rooms.clearPendingUndo(roomId)) {
       io.to(roomId).emit(SOCKET_EVENT.SERVER_UNDO_STATE, rooms.undoState(roomId), null);
     }
-    if (!rooms.isOver(roomId)) rooms.setPaused(roomId, true);
   }
-  if (seat) rooms.setProfile(roomId, seat, null);
+
+  if (matched && inProgress && seat) {
+    if (explicit) {
+      // Walked away: that's a resignation.
+      log.info("room.leave", `room=${roomId} ${seat} left a matched game: resigns`);
+      io.to(roomId).emit(SOCKET_EVENT.SERVER_PRESENCE, rooms.presence(roomId, seat));
+      engine.resign(roomId, seat);
+      return roomId;
+    }
+    rooms.setPaused(roomId, true);
+    const deadline = Date.now() + ABANDON_GRACE_MS;
+    const timer = setTimeout(() => {
+      if (rooms.abandoning(roomId)?.deadline !== deadline) return;
+      rooms.clearAbandon(roomId);
+      rooms.setPaused(roomId, false);
+      const winner = seat === PLAYER.PLAYER1 ? PLAYER.PLAYER2 : PLAYER.PLAYER1;
+      rooms.setOver(roomId, { kind: "abandon", winner });
+      rooms.clearLegalMoves(roomId);
+      log.info("room.leave", `room=${roomId} ${seat} didn't come back: ${winner} wins by abandonment`);
+      io.to(roomId).emit(SOCKET_EVENT.SERVER_ABANDON, winner);
+      io.to(roomId).emit(SOCKET_EVENT.SERVER_PRESENCE, rooms.presence(roomId));
+    }, ABANDON_GRACE_MS);
+    timer.unref?.();
+    rooms.setAbandon(roomId, seat, deadline, timer);
+  } else if (inProgress) {
+    rooms.setPaused(roomId, true);
+  }
+
+  // A matched player may come back, keep their name meanwhile.
+  if (seat && !matched) rooms.setProfile(roomId, seat, null);
   io.to(roomId).emit(SOCKET_EVENT.SERVER_PROFILES, rooms.profiles(roomId));
   io.to(roomId).emit(SOCKET_EVENT.SERVER_PRESENCE, rooms.presence(roomId, seat));
   log.info("room.leave", `socket=${socket.id} (${seat ?? "?"}) left room=${roomId}${rooms.isPaused(roomId) ? ", game paused" : ""}`);
@@ -181,4 +250,4 @@ function isValidPlayerId(v) {
   return v === PLAYER.PLAYER1 || v === PLAYER.PLAYER2;
 }
 
-module.exports = { attachRoomHandlers, leaveRoom };
+module.exports = { attachRoomHandlers, leaveRoom, cleanProfile };

@@ -18,13 +18,15 @@ const { Server: IoServer } = require("socket.io");
 const config = require("./config");
 const { log } = require("./logger");
 const { RoomRegistry } = require("./state/RoomRegistry");
+const { Matchmaker } = require("./state/Matchmaker");
+const { Lobby } = require("./state/Lobby");
 const { CppClient } = require("./cpp/CppClient");
 const { GameEngine } = require("./cpp/GameEngine");
 const { attachSocketHandlers } = require("./socket/attach");
 
 // ---------- HTTP + Socket.IO scaffolding ----------
 
-function createHttpApp(rooms) {
+function createHttpApp(rooms, getLobby) {
   const app = express();
   app.use(cors({
     origin:
@@ -42,6 +44,7 @@ function createHttpApp(rooms) {
     res.json({
       ok: true,
       rooms: rooms.size(),
+      ...(getLobby()?.stats() ?? {}),
       uptimeSec: Math.round(process.uptime()),
     })
   );
@@ -70,12 +73,15 @@ function main() {
     timeoutMs: config.CPP_REQUEST_TIMEOUT_MS,
   });
 
-  const app = createHttpApp(rooms);
+  let lobby = null;
+  const app = createHttpApp(rooms, () => lobby);
   const httpServer = http.createServer(app);
   const io = createIo(httpServer);
 
   const engine = new GameEngine({ io, rooms, cppClient });
-  const deps = { io, rooms, engine };
+  const matchmaker = new Matchmaker({ io, rooms });
+  lobby = new Lobby({ io, rooms, matchmaker });
+  const deps = { io, rooms, engine, matchmaker, lobby };
   const devTools = loadDevTools({ io, rooms, engine, cppClient });
 
   io.on("connection", (socket) => {

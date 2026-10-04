@@ -52,6 +52,8 @@ export type UndoEvent = {
 export type GameResult =
   | { kind: "checkmate"; winner: PlayerId }
   | { kind: "resign"; winner: PlayerId }
+  /** Matchmade games: the other player dropped out and didn't come back. */
+  | { kind: "abandon"; winner: PlayerId }
   | { kind: "stalemate"; winner: null };
 
 // ---------- Who's in the room ----------
@@ -63,4 +65,6 @@ export type Presence = {
   left: PlayerId | null;
   /** Seconds played, pauses excluded. */
   elapsed: number;
+  /** Matchmade games: ms until the absent player loses, while counting down. */
+  abandonIn?: number | null;
 };

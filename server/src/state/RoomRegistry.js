@@ -68,12 +68,16 @@ class RoomRegistry {
       moves: [],   // { player, pieceId, from, to, promo }
       undone: [],  // the engine keeps one level of redo
       clock: freshClock(),
+      // Rooms made by the matchmaker: { tickets: { pl1, pl2 } }. Seats are
+      // reserved; only the holder of a seat's ticket may take it.
+      match: null,
     });
     log.debug("rooms", `create room=${roomId} creator=${creatorId}`);
   }
 
   dispose(roomId) {
     this.clearPendingUndo(roomId);
+    this.clearAbandon(roomId);
     if (this._rooms.delete(roomId)) log.debug("rooms", `dispose room=${roomId}`);
   }
 
@@ -97,8 +101,10 @@ class RoomRegistry {
     room.players[PLAYER.PLAYER1] = { moveMap: {}, alreadyPromotedPawns: [] };
     room.players[PLAYER.PLAYER2] = { moveMap: {}, alreadyPromotedPawns: [] };
     this.clearPendingUndo(roomId);
+    this.clearAbandon(roomId);
     room.undo = freshUndo();
     room.over = false;
+    room.result = null;
     room.moves = [];
     room.undone = [];
     room.clock = freshClock();
@@ -202,6 +208,35 @@ class RoomRegistry {
     return seats ? Object.values(seats).filter(Boolean).length : 0;
   }
 
+  // ---------- matchmade rooms ----------
+
+  setMatch(roomId, match) {
+    const room = this._rooms.get(roomId);
+    if (room) room.match = match;
+  }
+
+  /** The match record of a matchmade room, or null for a private room. */
+  match(roomId) {
+    return this._rooms.get(roomId)?.match ?? null;
+  }
+
+  /** The seat a ticket reserves, or null. */
+  seatForTicket(roomId, ticket) {
+    const tickets = this._rooms.get(roomId)?.match?.tickets;
+    if (!tickets || typeof ticket !== "string") return null;
+    return Object.keys(tickets).find((p) => tickets[p] === ticket) ?? null;
+  }
+
+  /** Players seated in games that have started. */
+  playingCount() {
+    let n = 0;
+    for (const room of this._rooms.values()) {
+      if (!room.turn) continue;
+      for (const s of Object.values(room.seats)) if (s) n++;
+    }
+    return n;
+  }
+
   // ---------- pause / clock / game over ----------
 
   /** True once the engine has set the board up (a turn exists). */
@@ -233,16 +268,50 @@ class RoomRegistry {
     return Math.max(0, Math.floor((now - c.startedAt - c.pausedFor) / 1000));
   }
 
+  result(roomId) {
+    return this._rooms.get(roomId)?.result ?? null;
+  }
+
   isOver(roomId) {
     return Boolean(this._rooms.get(roomId)?.over);
   }
 
-  /** Checkmate, stalemate or resignation: the clock stops. */
-  setOver(roomId) {
+  /**
+   * Checkmate, stalemate, resignation or abandonment: the clock stops.
+   * `result` is { kind, winner } as the browsers know it, kept so a player
+   * who reloads a finished game sees how it ended.
+   */
+  setOver(roomId, result = null) {
     const room = this._rooms.get(roomId);
     if (!room || room.over) return;
     room.over = true;
+    room.result = result;
     room.clock.stoppedAt = room.clock.pausedAt ?? Date.now();
+  }
+
+  // ---------- abandonment (matchmade games) ----------
+
+  /** Starts the countdown after which `seat` loses for not coming back. */
+  setAbandon(roomId, seat, deadline, timer) {
+    const room = this._rooms.get(roomId);
+    if (!room) return clearTimeout(timer);
+    this.clearAbandon(roomId);
+    room.abandon = { seat, deadline, timer };
+  }
+
+  /** Returns the countdown that was running (and stops it), or null. */
+  clearAbandon(roomId) {
+    const room = this._rooms.get(roomId);
+    const a = room?.abandon ?? null;
+    if (a) {
+      clearTimeout(a.timer);
+      room.abandon = null;
+    }
+    return a;
+  }
+
+  abandoning(roomId) {
+    return this._rooms.get(roomId)?.abandon ?? null;
   }
 
   /** What the browsers are told about who's here. */
@@ -257,6 +326,8 @@ class RoomRegistry {
       paused: room.paused,
       left,
       elapsed: this.elapsed(roomId),
+      // ms until an absent player in a matchmade game loses, if counting down.
+      abandonIn: room.abandon ? Math.max(0, room.abandon.deadline - Date.now()) : null,
     };
   }
 

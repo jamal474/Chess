@@ -12,6 +12,10 @@ const LBL = "text-[11px] font-bold tracking-[0.12em] uppercase";
  */
 export default function NamePrompt({
   open,
+  kicker,
+  title = "YOUR NAME",
+  submitLabel = "PLAY →",
+  onCancel,
   roomCode,
   showShare,
   note,
@@ -20,6 +24,12 @@ export default function NamePrompt({
   onSubmit,
 }: {
   open: boolean;
+  /** Small line above the title; defaults to the room code. */
+  kicker?: string;
+  title?: string;
+  submitLabel?: string;
+  /** Show a close button (editing from the menu); without it the prompt must be answered. */
+  onCancel?: () => void;
   roomCode: string;
   /** The creator waits for someone to join: offer the code to send them. */
   showShare: boolean;
@@ -43,6 +53,13 @@ export default function NamePrompt({
   useEffect(() => {
     if (open) input.current?.select();
   }, [open]);
+
+  useEffect(() => {
+    if (!open || !onCancel) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onCancel();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onCancel]);
 
   if (!open) return null;
 
@@ -71,11 +88,23 @@ export default function NamePrompt({
         onSubmit={submit}
         className="brut-lg w-full max-w-md bg-white p-6 flex flex-col gap-5"
       >
-        <div className="-mx-6 px-6 pb-3 border-b-3 border-black flex flex-col gap-1.5">
-          <span className={`${LBL} opacity-70`}>ROOM {roomCode} · BEFORE YOU PLAY</span>
-          <h2 id="name-title" className="font-display text-3xl leading-none tracking-tight">
-            YOUR NAME
-          </h2>
+        <div className="-mx-6 px-6 pb-3 border-b-3 border-black flex items-start gap-3">
+          <div className="flex-1 min-w-0 flex flex-col gap-1.5">
+            <span className={`${LBL} opacity-70`}>{kicker ?? `ROOM ${roomCode} · BEFORE YOU PLAY`}</span>
+            <h2 id="name-title" className="font-display text-3xl leading-none tracking-tight">
+              {title}
+            </h2>
+          </div>
+          {onCancel && (
+            <button
+              type="button"
+              onClick={onCancel}
+              aria-label="Close"
+              className="shrink-0 w-8 h-8 border-2 border-black font-bold leading-none hover:bg-black hover:text-white"
+            >
+              ✕
+            </button>
+          )}
         </div>
 
         {note && (
@@ -151,7 +180,7 @@ export default function NamePrompt({
         )}
 
         <button type="submit" disabled={!valid} className="btn btn-primary text-lg py-4">
-          PLAY →
+          {submitLabel}
         </button>
       </form>
     </div>

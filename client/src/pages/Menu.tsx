@@ -1,10 +1,23 @@
-import { lazy, Suspense, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { lazy, Suspense, useCallback, useEffect, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { socket } from "../lib/socket";
 import { log } from "../lib/logger";
 import { PLAYER1, PLAYER2, type PlayerId } from "../lib/types";
 import FloatingPieces from "../components/FloatingPieces";
-import NationalityBadge from "../components/NationalityBadge";
+import { useNationality } from "../components/NationalityBadge";
+import PlayerCard from "../components/PlayerCard";
+import LobbyBar from "../components/LobbyBar";
+import NamePrompt from "../components/NamePrompt";
+import { useLobbyStats } from "../hooks/useLobbyStats";
+import { readName, saveProfile } from "../lib/identity";
+import type { Country, Profile } from "../lib/types";
+import PlayOnlineCard from "../components/PlayOnlineCard";
+import MatchFound from "../components/MatchFound";
+import { useMatchmaking } from "../hooks/useMatchmaking";
+import { enterMatch, enterPrivateRoom } from "../lib/session";
+
+/** What the game page hands back when a match was called off. */
+type MenuState = { searchingSince?: number; message?: string; findNow?: boolean } | null;
 
 // Dev-only "solo game" launcher; removed from production builds.
 const DevMenu = import.meta.env.DEV ? lazy(() => import("../dev/DevMenu")) : null;
@@ -31,17 +44,66 @@ function resolvePlayerId(choice: Color): PlayerId {
 
 export default function Menu() {
   const nav = useNavigate();
+  const location = useLocation();
+  const handed = (location.state as MenuState) ?? null;
   const [choice, setChoice] = useState<Color>("Random");
   const [joinCode, setJoinCode] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const stats = useLobbyStats();
+  const nationality = useNationality();
+  const [name, setName] = useState(readName);
+  const [editing, setEditing] = useState(false);
+  // What the player picked in the editor this visit (undefined: detection's answer).
+  const [chosen, setChosen] = useState<Country | null | undefined>(undefined);
+  const country = chosen === undefined ? nationality : chosen;
+
+  // ---------- Play online ----------
+  const match = useMatchmaking(handed?.searchingSince);
+  const [searchAfterSave, setSearchAfterSave] = useState(false);
+  useEffect(() => {
+    if (handed?.message) match.notify(handed.message);
+    // "Play again" from a finished matchmade game.
+    if (handed?.findNow && readName().trim()) match.find({ name: readName().trim(), country });
+    // Consume the hand-over so a refresh doesn't replay it.
+    if (handed) nav(".", { replace: true, state: null });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  function onFind() {
+    if (!name.trim()) {
+      setSearchAfterSave(true);
+      setEditing(true);
+      return;
+    }
+    match.find({ name: name.trim(), country });
+  }
+
+  const goToMatch = useCallback(() => {
+    if (match.state.status !== "found") return;
+    const m = match.state.match;
+    enterMatch({ playerId: m.playerId, roomId: m.roomId, ticket: m.ticket });
+    nav("/game");
+  }, [match.state, nav]);
+
+  function onSaveProfile(p: Profile) {
+    saveProfile(p, nationality);
+    setName(p.name);
+    setChosen(p.country);
+    setEditing(false);
+    if (searchAfterSave) {
+      setSearchAfterSave(false);
+      match.find(p);
+    } else if (match.state.status === "searching") {
+      match.setProfile(p);
+    }
+  }
 
   function onCreate() {
     const playerId = resolvePlayerId(choice);
     const roomCode = generateRoomCode();
     log.info("Menu", `create room ${roomCode} as ${playerId} (choice=${choice})`);
-    sessionStorage.setItem("playerID", playerId);
-    sessionStorage.setItem("isCreator", "true");
-    sessionStorage.setItem("createRoomId", roomCode);
+    if (match.state.status === "searching") match.cancel();
+    enterPrivateRoom({ playerId, roomCode, creator: true });
     nav("/game");
   }
 
@@ -56,9 +118,8 @@ export default function Menu() {
         return setError("ROOM UNAVAILABLE");
       }
       log.info("Menu", `join room ${code} as ${joinerPlayerId}`);
-      sessionStorage.setItem("playerID", joinerPlayerId);
-      sessionStorage.setItem("joinRoomId", code);
-      sessionStorage.setItem("isCreator", "false");
+      if (match.state.status === "searching") match.cancel();
+      enterPrivateRoom({ playerId: joinerPlayerId, roomCode: code, creator: false });
       nav("/game");
     });
   }
@@ -68,26 +129,44 @@ export default function Menu() {
       <FloatingPieces />
 
       <div className="relative z-10 min-h-screen flex flex-col">
-        <header className="border-b-3 border-black bg-white flex items-center justify-between px-6 py-3">
-          <h1 className="font-display text-3xl tracking-tighter leading-none">C H E S S</h1>
-          <div className="brut bg-white px-3 py-1.5">
-            <NationalityBadge heightPx={22} />
-          </div>
+        <header className="border-b-3 border-black bg-white flex items-center justify-between gap-3 px-4 sm:px-6 py-3">
+          <h1 className="font-display text-2xl sm:text-3xl tracking-tighter leading-none shrink-0">C H E S S</h1>
+          <PlayerCard name={name} country={country} onEdit={() => setEditing(true)} />
         </header>
+        <LobbyBar stats={stats} />
 
-        <main className="flex-1 flex items-center justify-center p-6">
-          <div className="grid lg:grid-cols-2 gap-8 w-full max-w-4xl">
+        <main className="flex-1 flex items-center justify-center p-4 sm:p-6">
+          <div className="w-full max-w-4xl flex flex-col gap-6 sm:gap-8">
+          <PlayOnlineCard
+            state={match.state}
+            stats={stats}
+            name={name}
+            country={country}
+            message={match.error}
+            onFind={onFind}
+            onCancel={match.cancel}
+            onEditProfile={() => setEditing(true)}
+            onInviteFriend={onCreate}
+          />
+
+          <div className="flex items-center gap-3" aria-hidden="true">
+            <span className="h-[3px] flex-1 bg-black" />
+            <span className="label">OR PLAY A FRIEND</span>
+            <span className="h-[3px] flex-1 bg-black" />
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 sm:gap-8">
             {/* CREATE panel */}
-            <section className="brut-lg bg-white p-6 flex flex-col">
-              <div className="border-b-3 border-black -mx-6 px-6 pb-3 mb-4">
-                <span className="label">01 · CREATE A ROOM</span>
+            <section className="brut-lg bg-white p-4 sm:p-6 flex flex-col min-w-0">
+              <div className="border-b-3 border-black -mx-4 sm:-mx-6 px-4 sm:px-6 pb-3 mb-4">
+                <span className="label">02 · CREATE A ROOM</span>
               </div>
 
               <label className="label mb-2">PLAY AS</label>
               <div
                 role="radiogroup"
                 aria-label="Play as"
-                className="grid grid-cols-3 gap-2 mb-6"
+                className="grid grid-cols-3 gap-2 mb-6 min-w-0"
               >
                 {CHOICES.map((c) => {
                   const active = choice === c.label;
@@ -100,7 +179,7 @@ export default function Menu() {
                       onClick={() => setChoice(c.label)}
                       className={[
                         // Base: brutalist tile
-                        "relative border-3 border-black py-4 flex flex-col items-center gap-1",
+                        "relative min-w-0 border-3 border-black py-4 flex flex-col items-center gap-1",
                         "transition-transform cursor-pointer select-none",
                         // Selected vs idle — very obvious
                         active
@@ -134,9 +213,9 @@ export default function Menu() {
             </section>
 
             {/* JOIN panel */}
-            <section className="brut-lg bg-white p-6 flex flex-col">
-              <div className="border-b-3 border-black -mx-6 px-6 pb-3 mb-4">
-                <span className="label">02 · JOIN A ROOM</span>
+            <section className="brut-lg bg-white p-4 sm:p-6 flex flex-col min-w-0">
+              <div className="border-b-3 border-black -mx-4 sm:-mx-6 px-4 sm:px-6 pb-3 mb-4">
+                <span className="label">03 · JOIN A ROOM</span>
               </div>
 
               <label className="label mb-2">ROOM CODE</label>
@@ -147,7 +226,7 @@ export default function Menu() {
                 onKeyDown={(e) => e.key === "Enter" && onJoin()}
                 placeholder="XXXXX"
                 maxLength={12}
-                className="brut bg-white text-center font-mono text-3xl py-4 mb-2 tracking-widest outline-none focus:bg-accent"
+                className="brut w-full min-w-0 bg-white text-center font-mono text-3xl py-4 mb-2 tracking-widest outline-none focus:bg-accent"
               />
 
               {error && <p className="label text-red-600 mb-3">{error}</p>}
@@ -157,7 +236,33 @@ export default function Menu() {
               </button>
             </section>
           </div>
+          </div>
         </main>
+
+        {match.state.status === "found" && (
+          <MatchFound
+            me={{ name, country }}
+            opponent={match.state.match.opponent}
+            myColor={match.state.match.playerId}
+            onDone={goToMatch}
+          />
+        )}
+
+        <NamePrompt
+          open={editing}
+          kicker="YOUR PLAYER CARD"
+          title="WHO'S PLAYING?"
+          submitLabel={searchAfterSave ? "FIND OPPONENT →" : "SAVE"}
+          onCancel={() => {
+            setEditing(false);
+            setSearchAfterSave(false);
+          }}
+          roomCode=""
+          showShare={false}
+          defaultName={name}
+          defaultCountry={country}
+          onSubmit={onSaveProfile}
+        />
 
         {DevMenu && (
           <Suspense fallback={null}>
