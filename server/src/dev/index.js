@@ -94,6 +94,7 @@ function createDevTools({ io, rooms, engine, cppClient, gamesDir }) {
       rooms.setAlreadyPromoted(roomId, p, result.position.promotedPawns(p));
     }
     history.set(roomId, result.history);
+    rooms.setMoves(roomId, result.history);
 
     io.to(roomId).emit(DEV_EVENT.STATE, {
       name,

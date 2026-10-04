@@ -11,6 +11,9 @@ type Props = {
   isRecent: boolean;
   isCheck: boolean;
   isSelected: boolean;
+  /** Coordinates drawn in the corner of edge squares. */
+  rankLabel?: string;
+  fileLabel?: string;
   onClick: () => void;
   children: ReactNode;
 };
@@ -24,6 +27,8 @@ export default function Square({
   isRecent,
   isCheck,
   isSelected,
+  rankLabel,
+  fileLabel,
   onClick,
   children,
 }: Props) {
@@ -50,12 +55,18 @@ export default function Square({
       onClick={onClick}
       data-square={id}
       className={[
-        "relative flex items-center justify-center transition-shadow",
+        "relative min-w-0 min-h-0 flex items-center justify-center transition-shadow",
         themeClass,
         highlightClass,
         isOver ? "sq-hover" : "",
       ].join(" ")}
     >
+      {rankLabel && (
+        <span className="coord left-[4%] top-[3%]" aria-hidden="true">{rankLabel}</span>
+      )}
+      {fileLabel && (
+        <span className="coord right-[5%] bottom-[2%]" aria-hidden="true">{fileLabel}</span>
+      )}
       {children}
     </div>
   );

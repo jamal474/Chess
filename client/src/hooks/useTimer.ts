@@ -31,5 +31,10 @@ export function useTimer() {
       setSeconds(0);
       setRunning(true);
     },
+    /** Jump to the relay's clock, running or stopped. */
+    sync: (secs: number, run: boolean) => {
+      setSeconds(Math.max(0, Math.floor(secs)));
+      setRunning(run);
+    },
   };
 }

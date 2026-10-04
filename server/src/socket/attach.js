@@ -1,5 +1,5 @@
 const { log } = require("../logger");
-const { attachRoomHandlers }      = require("./roomHandlers");
+const { attachRoomHandlers, leaveRoom } = require("./roomHandlers");
 const { attachGameHandlers }      = require("./gameHandlers");
 const { attachChatHandlers }      = require("./chatHandlers");
 const { attachPromotionHandlers } = require("./promotionHandlers");
@@ -16,25 +16,12 @@ function attachSocketHandlers(socket, deps) {
   attachLifecycleHandlers(socket, deps);
 }
 
-function attachLifecycleHandlers(socket, { io, rooms, engine }) {
+function attachLifecycleHandlers(socket, deps) {
   socket.on("disconnect", (reason) => {
-    const roomId = rooms.unbindSocket(socket.id);
-    let empty = false;
-    if (roomId) {
-      // socket.io removes the socket from its rooms *before* firing this
-      // event, so adapter.rooms is already up-to-date.
-      const remaining = io.sockets.adapter.rooms.get(roomId)?.size ?? 0;
-      if (remaining === 0) {
-        rooms.dispose(roomId);
-        engine.deleteRoom(roomId); // free the engine's board too
-        empty = true;
-      }
-    }
-    log.debug(
-      "io",
-      `disconnect ${socket.id} reason=${reason ?? "?"}` +
-        (roomId ? ` room=${roomId}${empty ? " (last, disposed)" : ""}` : "")
-    );
+    // Same as leaving the page: the room is disposed if it's now empty,
+    // otherwise the other player is told and the game pauses.
+    const roomId = leaveRoom(socket, deps);
+    log.debug("io", `disconnect ${socket.id} reason=${reason ?? "?"}${roomId ? ` room=${roomId}` : ""}`);
   });
 
   socket.on("error", (err) => {

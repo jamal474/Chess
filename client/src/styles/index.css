@@ -118,6 +118,36 @@ body {
 .sq-selected{ box-shadow: inset 0 0 0 4px #000, inset 0 0 0 8px #facc15; }
 .sq-hover   { box-shadow: inset 0 0 0 4px #000; }
 
+/* Board coordinates inside the edge squares: difference blending keeps them
+   readable on every theme's light and dark squares. */
+.coord {
+  position: absolute;
+  font-family: "JetBrains Mono", monospace;
+  font-size: clamp(8px, 1.4vmin, 12px);
+  font-weight: 700;
+  line-height: 1;
+  color: #fff;
+  mix-blend-mode: difference;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* Winner confetti */
+@keyframes confetti-fall {
+  0%   { transform: translate3d(0, -40px, 0) rotate(0deg); }
+  100% { transform: translate3d(var(--drift, 0px), 110vh, 0) rotate(var(--spin, 720deg)); }
+}
+.confetti-piece {
+  position: absolute;
+  top: 0;
+  border: 2px solid #000;
+  animation: confetti-fall var(--dur, 4s) linear var(--delay, 0s) infinite;
+  will-change: transform;
+}
+@media (prefers-reduced-motion: reduce) {
+  .confetti-piece { animation: none; display: none; }
+}
+
 /* Utility to keep drag preview above everything */
 .drag-overlay-piece {
   filter: drop-shadow(4px 4px 0 rgba(0, 0, 0, 0.6));

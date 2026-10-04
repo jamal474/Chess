@@ -74,12 +74,14 @@ class GameEngine extends EventEmitter {
       }
 
       this._toRoom(roomId, SOCKET_EVENT.SERVER_PIECE_MOVE, playerId, pieceId, res.old_position, res.position);
+      this.rooms.recordMove(roomId, { player: playerId, pieceId, from: res.old_position, to: res.position });
       this.emit("moved", { roomId, playerId, pieceId, from: res.old_position, to: res.position });
 
       if (res.promoted_to) {
         const list = this.rooms.getAlreadyPromoted(roomId, playerId);
         this.rooms.setAlreadyPromoted(roomId, playerId, [...list, pieceId]);
         this._toRoom(roomId, SOCKET_EVENT.SERVER_PAWN_PROMOTION, playerId, pieceId, res.position, res.promoted_to);
+        this.rooms.recordPromotion(roomId, res.promoted_to);
         this.emit("promoted", { roomId, playerId, pieceId, newPieceId: res.promoted_to });
       }
 
@@ -88,17 +90,20 @@ class GameEngine extends EventEmitter {
     });
   }
 
+  /** Takes back playerId's last move. Resolves true if the engine did it. */
   undo(roomId, playerId) {
     return this._serial(roomId, async () => {
       const res = await this._request({ req_id: CPP_REQ.UNDO_MOVE, room_id: roomId, player_id: playerId });
-      if (!res) return;
+      if (!res) return false;
       this._toRoom(
         roomId, SOCKET_EVENT.SERVER_UNDO,
         res.player_id, res.piece_id, res.position, res.is_demoted,
         res.revived_player_id, res.revived_piece_id, res.revived_position,
       );
+      this.rooms.recordUndo(roomId);
       this.emit("undone", { roomId });
       this._applyTurnState(roomId, res.turn_state);
+      return true;
     });
   }
 
@@ -111,6 +116,7 @@ class GameEngine extends EventEmitter {
         res.player_id, res.piece_id, res.position, res.pawn_promoted,
         res.killed_player_id, res.killed_piece_id, res.killed_position,
       );
+      this.rooms.recordRedo(roomId);
       this.emit("redone", { roomId });
       this._applyTurnState(roomId, res.turn_state);
     });
@@ -122,6 +128,7 @@ class GameEngine extends EventEmitter {
       if (!res) return;
       log.info("engine.resign", `room=${roomId} player=${playerId}`);
       this.rooms.clearLegalMoves(roomId);
+      this.rooms.setOver(roomId);
       this._toRoom(roomId, SOCKET_EVENT.SERVER_RESIGN, playerId);
     });
   }
@@ -178,8 +185,12 @@ class GameEngine extends EventEmitter {
 
     switch (state.check_or_mate_status) {
       case MATE_STATUS.CHECK:      return this._toRoom(roomId, SOCKET_EVENT.CHECK, player);
-      case MATE_STATUS.CHECK_MATE: return this._toRoom(roomId, SOCKET_EVENT.CHECK_MATE, player);
-      case MATE_STATUS.STALE_MATE: return this._toRoom(roomId, SOCKET_EVENT.STALE_MATE, player);
+      case MATE_STATUS.CHECK_MATE:
+        this.rooms.setOver(roomId);
+        return this._toRoom(roomId, SOCKET_EVENT.CHECK_MATE, player);
+      case MATE_STATUS.STALE_MATE:
+        this.rooms.setOver(roomId);
+        return this._toRoom(roomId, SOCKET_EVENT.STALE_MATE, player);
       case MATE_STATUS.NIL:        return undefined;
       default: log.warn("engine", `unknown check_or_mate_status=${state.check_or_mate_status}`);
     }
