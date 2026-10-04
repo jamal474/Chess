@@ -1,4 +1,4 @@
-const { PLAYER } = require("../constants");
+const { PLAYER, MAX_UNDOS } = require("../constants");
 const { log } = require("../logger");
 
 /**
@@ -15,7 +15,14 @@ const { log } = require("../logger");
  *   - the legal moves of the side to move, as pushed by the engine at the
  *     start of each turn, so pieceMove is authorised without a round-trip;
  *   - which of a player's pawns have been promoted (recorded when the engine
- *     reports a promotion).
+ *     reports a promotion);
+ *   - each player's display name and country;
+ *   - how many undos each player has used, and any request awaiting the
+ *     opponent's answer;
+ *   - which socket sits in each seat. A started game is paused while a seat
+ *     is empty, and resumes for whoever takes the seat;
+ *   - the moves played (so a newcomer can be sent the position) and the
+ *     game clock.
  */
 class RoomRegistry {
   constructor() {
@@ -53,11 +60,20 @@ class RoomRegistry {
         [PLAYER.PLAYER1]: { moveMap: {}, alreadyPromotedPawns: [] },
         [PLAYER.PLAYER2]: { moveMap: {}, alreadyPromotedPawns: [] },
       },
+      profiles: { [PLAYER.PLAYER1]: null, [PLAYER.PLAYER2]: null },
+      undo: freshUndo(),
+      seats: { [PLAYER.PLAYER1]: null, [PLAYER.PLAYER2]: null },
+      paused: false,
+      over: false,
+      moves: [],   // { player, pieceId, from, to, promo }
+      undone: [],  // the engine keeps one level of redo
+      clock: freshClock(),
     });
     log.debug("rooms", `create room=${roomId} creator=${creatorId}`);
   }
 
   dispose(roomId) {
+    this.clearPendingUndo(roomId);
     if (this._rooms.delete(roomId)) log.debug("rooms", `dispose room=${roomId}`);
   }
 
@@ -80,6 +96,13 @@ class RoomRegistry {
     room.turn = PLAYER.PLAYER1;
     room.players[PLAYER.PLAYER1] = { moveMap: {}, alreadyPromotedPawns: [] };
     room.players[PLAYER.PLAYER2] = { moveMap: {}, alreadyPromotedPawns: [] };
+    this.clearPendingUndo(roomId);
+    room.undo = freshUndo();
+    room.over = false;
+    room.moves = [];
+    room.undone = [];
+    room.clock = freshClock();
+    room.clock.startedAt = Date.now();
   }
 
   currentTurn(roomId) {
@@ -135,6 +158,213 @@ class RoomRegistry {
     player.alreadyPromotedPawns = Array.isArray(list) ? list : [];
   }
 
+  // ---------- seats ----------
+
+  /** Puts a socket in a seat. */
+  sit(roomId, playerId, socketId) {
+    const room = this._rooms.get(roomId);
+    if (room && playerId in room.seats) room.seats[playerId] = socketId;
+  }
+
+  /** Empties whichever seat the socket held; returns that seat's playerId or null. */
+  stand(roomId, socketId) {
+    const room = this._rooms.get(roomId);
+    if (!room) return null;
+    for (const p of Object.keys(room.seats)) {
+      if (room.seats[p] === socketId) {
+        room.seats[p] = null;
+        return p;
+      }
+    }
+    return null;
+  }
+
+  seatOf(roomId, socketId) {
+    const seats = this._rooms.get(roomId)?.seats;
+    if (!seats) return null;
+    return Object.keys(seats).find((p) => seats[p] === socketId) ?? null;
+  }
+
+  /** The first empty seat, or null when both are taken. */
+  freeSeat(roomId) {
+    const seats = this._rooms.get(roomId)?.seats;
+    if (!seats) return null;
+    return Object.keys(seats).find((p) => !seats[p]) ?? null;
+  }
+
+  isSeatFree(roomId, playerId) {
+    const seats = this._rooms.get(roomId)?.seats;
+    return Boolean(seats && playerId in seats && !seats[playerId]);
+  }
+
+  occupied(roomId) {
+    const seats = this._rooms.get(roomId)?.seats;
+    return seats ? Object.values(seats).filter(Boolean).length : 0;
+  }
+
+  // ---------- pause / clock / game over ----------
+
+  /** True once the engine has set the board up (a turn exists). */
+  isStarted(roomId) {
+    return Boolean(this._rooms.get(roomId)?.turn);
+  }
+
+  isPaused(roomId) {
+    return Boolean(this._rooms.get(roomId)?.paused);
+  }
+
+  setPaused(roomId, paused) {
+    const room = this._rooms.get(roomId);
+    if (!room || room.paused === paused) return;
+    room.paused = paused;
+    const c = room.clock;
+    if (paused) c.pausedAt = Date.now();
+    else if (c.pausedAt) {
+      c.pausedFor += Date.now() - c.pausedAt;
+      c.pausedAt = null;
+    }
+  }
+
+  /** Whole seconds the game has been played, pauses excluded. */
+  elapsed(roomId) {
+    const c = this._rooms.get(roomId)?.clock;
+    if (!c || !c.startedAt) return 0;
+    const now = c.pausedAt ?? c.stoppedAt ?? Date.now();
+    return Math.max(0, Math.floor((now - c.startedAt - c.pausedFor) / 1000));
+  }
+
+  isOver(roomId) {
+    return Boolean(this._rooms.get(roomId)?.over);
+  }
+
+  /** Checkmate, stalemate or resignation: the clock stops. */
+  setOver(roomId) {
+    const room = this._rooms.get(roomId);
+    if (!room || room.over) return;
+    room.over = true;
+    room.clock.stoppedAt = room.clock.pausedAt ?? Date.now();
+  }
+
+  /** What the browsers are told about who's here. */
+  presence(roomId, left = null) {
+    const room = this._rooms.get(roomId);
+    if (!room) return null;
+    return {
+      seats: {
+        [PLAYER.PLAYER1]: Boolean(room.seats[PLAYER.PLAYER1]),
+        [PLAYER.PLAYER2]: Boolean(room.seats[PLAYER.PLAYER2]),
+      },
+      paused: room.paused,
+      left,
+      elapsed: this.elapsed(roomId),
+    };
+  }
+
+  // ---------- move record (for snapshots) ----------
+
+  recordMove(roomId, move) {
+    const room = this._rooms.get(roomId);
+    if (!room) return;
+    room.moves.push({ ...move, promo: null });
+    room.undone = [];
+  }
+
+  recordPromotion(roomId, newPieceId) {
+    const last = this._rooms.get(roomId)?.moves.at(-1);
+    if (last) last.promo = newPieceId;
+  }
+
+  recordUndo(roomId) {
+    const room = this._rooms.get(roomId);
+    const m = room?.moves.pop();
+    if (m) room.undone.push(m);
+  }
+
+  recordRedo(roomId) {
+    const room = this._rooms.get(roomId);
+    const m = room?.undone.pop();
+    if (m) room.moves.push(m);
+  }
+
+  /** Replaces the record wholesale (dev tools after loading a game). */
+  setMoves(roomId, moves) {
+    const room = this._rooms.get(roomId);
+    if (!room) return;
+    room.moves = moves.map((m) => ({ player: m.player, pieceId: m.pieceId, from: m.from, to: m.to, promo: m.promo ?? null }));
+    room.undone = [];
+  }
+
+  moves(roomId) {
+    return this._rooms.get(roomId)?.moves.slice() ?? [];
+  }
+
+  // ---------- player profiles ----------
+
+  setProfile(roomId, playerId, profile) {
+    const room = this._rooms.get(roomId);
+    if (room && playerId in room.profiles) room.profiles[playerId] = profile;
+  }
+
+  profiles(roomId) {
+    return this._rooms.get(roomId)?.profiles ?? null;
+  }
+
+  // ---------- undo requests ----------
+
+  /**
+   * What the browsers are told: { max, used: {pl1, pl2}, pending: { by, expiresIn } | null }.
+   * expiresIn (ms from now) rather than a timestamp, so the browsers' clocks don't matter.
+   */
+  undoState(roomId) {
+    const undo = this._rooms.get(roomId)?.undo;
+    if (!undo) return null;
+    const p = undo.pending;
+    return {
+      max: MAX_UNDOS,
+      used: { ...undo.used },
+      pending: p ? { by: p.by, expiresIn: Math.max(0, p.expiresAt - Date.now()) } : null,
+    };
+  }
+
+  undosLeft(roomId, playerId) {
+    const undo = this._rooms.get(roomId)?.undo;
+    return undo ? Math.max(0, MAX_UNDOS - (undo.used[playerId] ?? 0)) : 0;
+  }
+
+  pendingUndo(roomId) {
+    return this._rooms.get(roomId)?.undo?.pending ?? null;
+  }
+
+  /** `timer` is cleared whenever the request ends, however it ends. */
+  setPendingUndo(roomId, by, expiresAt, timer) {
+    const room = this._rooms.get(roomId);
+    if (!room) return clearTimeout(timer);
+    this.clearPendingUndo(roomId);
+    room.undo.pending = { by, expiresAt, timer };
+  }
+
+  /** Returns the request that was pending, or null. */
+  clearPendingUndo(roomId) {
+    const undo = this._rooms.get(roomId)?.undo;
+    const pending = undo?.pending ?? null;
+    if (pending) {
+      clearTimeout(pending.timer);
+      undo.pending = null;
+    }
+    return pending;
+  }
+
+  countUndo(roomId, playerId) {
+    const undo = this._rooms.get(roomId)?.undo;
+    if (undo && playerId in undo.used) undo.used[playerId] += 1;
+  }
+
+  /** A new player in a seat starts with a full set of undos. */
+  resetUndos(roomId, playerId) {
+    const undo = this._rooms.get(roomId)?.undo;
+    if (undo && playerId in undo.used) undo.used[playerId] = 0;
+  }
+
   // ---------- helpers used by the room-exists check ----------
 
   /** The other seat's player-id (opposite of whoever created the room). */
@@ -143,6 +373,14 @@ class RoomRegistry {
     if (!room) return null;
     return room.creatorId === PLAYER.PLAYER1 ? PLAYER.PLAYER2 : PLAYER.PLAYER1;
   }
+}
+
+function freshClock() {
+  return { startedAt: null, pausedAt: null, pausedFor: 0, stoppedAt: null };
+}
+
+function freshUndo() {
+  return { used: { [PLAYER.PLAYER1]: 0, [PLAYER.PLAYER2]: 0 }, pending: null };
 }
 
 module.exports = { RoomRegistry };

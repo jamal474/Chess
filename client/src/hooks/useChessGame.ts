@@ -25,13 +25,26 @@ import {
   isPiece,
   moveNotation,
   objPosition,
+  oppositePlayer,
   ownColor,
   pieceKey,
   strPosition,
   type Piece,
   type PieceColor,
 } from "../lib/pieces";
-import { PLAYER1, PLAYER2, type PlayerId, type PosObj, type SquareId } from "../lib/types";
+import {
+  PLAYER1,
+  PLAYER2,
+  type GameResult,
+  type PlayerId,
+  type PosObj,
+  type Presence,
+  type Profile,
+  type Profiles,
+  type SquareId,
+  type UndoEvent,
+  type UndoState,
+} from "../lib/types";
 import { useTimer } from "./useTimer";
 
 export type ChatMsg = { from: PlayerId; text: string };
@@ -48,6 +61,20 @@ export type DevSnapshot = {
 };
 export type MoveRow = { i: number; white: string; black: string };
 
+/** The whole position, sent to a player taking over a seat mid-game. */
+type Snapshot = {
+  pieces: Piece[];
+  moveRows: MoveRow[];
+  recentMove: { from: SquareId; to: SquareId } | null;
+  turn: PlayerId;
+  elapsed: number;
+};
+
+// Leaving the game page tells the relay, so the other player isn't left
+// waiting on an empty seat. Deferred a tick: React (StrictMode, fast refresh)
+// unmounts and remounts the page, and a remount cancels the pending leave.
+let pendingLeave: number | null = null;
+
 /** Legal moves of the side to move, keyed by engine piece id. */
 type LegalMoves = { player: PlayerId; moves: Record<string, PosObj[]> };
 
@@ -62,6 +89,9 @@ type PendingMove = {
 
 const ACK_TIMEOUT_MS = 8000;
 
+const NO_PROFILES: Profiles = { [PLAYER1]: null, [PLAYER2]: null };
+const FRESH_UNDO: UndoState = { max: 3, used: { [PLAYER1]: 0, [PLAYER2]: 0 }, pending: null };
+
 export type ChessGame = {
   // room
   roomCode: string;
@@ -71,6 +101,16 @@ export type ChessGame = {
   actingPlayer: PlayerId;
 
   // state
+  /** True once both players are in and the engine has set up the board. */
+  started: boolean;
+  profiles: Profiles;
+  undoState: UndoState;
+  /** The latest undo outcome, for a short notice; `at` tells repeats apart. */
+  undoEvent: (UndoEvent & { at: number }) | null;
+  /** Seats and pause state; null until something changes after the start. */
+  presence: Presence | null;
+  /** This tab took over a seat in a game already under way. */
+  resumed: boolean;
   pieces: Piece[];
   currentTurn: PlayerId;
   checkedPlayer: PlayerId | null;
@@ -81,7 +121,7 @@ export type ChessGame = {
   selectedKey: string | null;
   messages: ChatMsg[];
   moveRows: MoveRow[];
-  gameOver: string | null;
+  result: GameResult | null;
   timer: ReturnType<typeof useTimer>;
 
   // actions
@@ -89,11 +129,15 @@ export type ChessGame = {
   moveTo: (square: SquareId) => void;
   clearSelection: () => void;
   sendChat: (text: string) => void;
-  undo: () => void;
+  setProfile: (profile: Profile) => void;
+  /** Ask the opponent to take back your last move. */
+  requestUndo: () => void;
+  cancelUndo: () => void;
+  /** Answer the opponent's undo request. */
+  respondUndo: (accept: boolean) => void;
   redo: () => void;
   resign: () => void;
   reset: () => void;
-  dismissGameOver: () => void;
 
   /** Dev builds only: play both sides from one tab. Undefined in production. */
   dev?: { hotSeat: boolean; setHotSeat: (on: boolean) => void };
@@ -120,7 +164,13 @@ export function useChessGame(): ChessGame {
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   const [moveRows, setMoveRows] = useState<MoveRow[]>([]);
-  const [gameOver, setGameOver] = useState<string | null>(null);
+  const [result, setResult] = useState<GameResult | null>(null);
+  const [started, setStarted] = useState(false);
+  const [profiles, setProfiles] = useState<Profiles>(NO_PROFILES);
+  const [undoState, setUndoState] = useState<UndoState>(FRESH_UNDO);
+  const [undoEvent, setUndoEvent] = useState<(UndoEvent & { at: number }) | null>(null);
+  const [presence, setPresence] = useState<Presence | null>(null);
+  const [resumed, setResumed] = useState(false);
 
   // Hot seat (dev only): this tab moves for whichever side is to play. In a
   // production build import.meta.env.DEV is false, so this is always off.
@@ -140,7 +190,12 @@ export function useChessGame(): ChessGame {
   const recentMoveRef = useRef(recentMove);
   recentMoveRef.current = recentMove;
   const legalRef = useRef<LegalMoves | null>(null);
+  // Re-sent after (re)joining the room: a profile emitted before the socket
+  // connected would otherwise reach the relay ahead of createRoom/joinRoom.
+  const profileRef = useRef<Profile | null>(null);
   const pendingRef = useRef<PendingMove | null>(null);
+  const resultRef = useRef<GameResult | null>(null);
+  resultRef.current = result;
 
   // ---------- Low-level piece mutation ----------
 
@@ -203,6 +258,10 @@ export function useChessGame(): ChessGame {
   // ---------- Socket lifecycle ----------
   useEffect(() => {
     if (!roomCode) return;
+    if (pendingLeave !== null) {
+      window.clearTimeout(pendingLeave);
+      pendingLeave = null;
+    }
     const doJoin = () => {
       if (isCreator) {
         log.info("useChessGame", `createRoom ${roomCode} as ${playerId}`);
@@ -215,17 +274,29 @@ export function useChessGame(): ChessGame {
         log.info("useChessGame", `joinRoom ${roomCode}`);
         socket.emit("joinRoom", roomCode);
       }
+      if (profileRef.current) socket.emit("setProfile", playerId, profileRef.current);
     };
     if (socket.connected) doJoin();
     else socket.once("connect", doJoin);
+    // A dropped connection loses the seat on the relay; take it back.
+    const onReconnect = () => doJoin();
+    socket.io.on("reconnect", onReconnect);
     return () => {
       socket.off("connect", doJoin);
+      socket.io.off("reconnect", onReconnect);
+      pendingLeave = window.setTimeout(() => {
+        pendingLeave = null;
+        socket.emit("leaveRoom");
+      }, 0);
     };
   }, [isCreator, playerId, roomCode]);
 
   // ---------- Socket handlers ----------
   useEffect(() => {
-    const onStart = () => timerRef.current.reset();
+    const onStart = () => {
+      setStarted(true);
+      timerRef.current.reset();
+    };
 
     const onLegalMoves = (pId: PlayerId, moves: Record<string, PosObj[]>) => {
       legalRef.current = { player: pId, moves: moves || {} };
@@ -282,17 +353,15 @@ export function useChessGame(): ChessGame {
     const onCheckMate = (pId: PlayerId) => {
       timerRef.current.stop();
       setCheckedPlayer(pId);
-      const winnerColor = pId === PLAYER1 ? "Black" : "White";
-      const who = pId === playerId ? "opponent" : "you";
-      log.info("useChessGame", `checkmate — ${winnerColor} wins (${who})`);
-      setGameOver(`Checkmate — ${winnerColor} wins (${who})`);
+      log.info("useChessGame", `checkmate — ${oppositePlayer(pId)} wins`);
+      setResult({ kind: "checkmate", winner: oppositePlayer(pId) });
       playNotify();
     };
 
     const onStaleMate = () => {
       timerRef.current.stop();
       log.info("useChessGame", "stalemate");
-      setGameOver("Stalemate — draw");
+      setResult({ kind: "stalemate", winner: null });
       playNotify();
     };
 
@@ -302,8 +371,45 @@ export function useChessGame(): ChessGame {
     const onServerResign = (pId: PlayerId) => {
       timerRef.current.stop();
       legalRef.current = null;
-      const who = pId === playerId ? "You" : "Opponent";
-      setGameOver(`${who} resigned.`);
+      setResult({ kind: "resign", winner: oppositePlayer(pId) });
+      playNotify();
+    };
+
+    const onServerProfiles = (p: Profiles) => setProfiles({ ...NO_PROFILES, ...(p || {}) });
+
+    const onPresence = (p: Presence) => {
+      if (!p) return;
+      setPresence(p);
+      if (p.left) playNotify();
+      // The relay owns the clock: it stops while the game is paused.
+      timerRef.current.sync(p.elapsed, !p.paused && !resultRef.current);
+    };
+
+    // We took over a seat in a game under way: draw the position as it is.
+    const onSnapshot = (s: Snapshot) => {
+      log.info("useChessGame", `resuming at ${s.moveRows.length} moves, ${s.turn} to move`);
+      pendingRef.current = null;
+      legalRef.current = null; // fresh legalMoves follow right after
+      setPieces(s.pieces);
+      setMoveRows(s.moveRows);
+      setRecentMove(s.recentMove);
+      setCurrentTurn(s.turn);
+      setCheckedPlayer(null);
+      setHighlightMoves([]);
+      setHighlightCaptures([]);
+      setSelectedKey(null);
+      setResult(null);
+      setStarted(true);
+      setResumed(true);
+      timerRef.current.sync(s.elapsed, true);
+    };
+
+    const onServerUndoState = (state: UndoState, event: UndoEvent | null) => {
+      if (state) setUndoState({ ...state, receivedAt: Date.now() });
+      if (event) {
+        setUndoEvent({ ...event, at: Date.now() });
+        if (event.type === "requested" && event.by !== playerId) playNotify();
+      }
     };
 
     const onServerReset = () => {
@@ -317,7 +423,8 @@ export function useChessGame(): ChessGame {
       setHighlightCaptures([]);
       setSelectedKey(null);
       setMoveRows([]);
-      setGameOver(null);
+      setResult(null);
+      setUndoEvent(null);
       timerRef.current.reset();
     };
 
@@ -397,6 +504,10 @@ export function useChessGame(): ChessGame {
     socket.on("serverPawnPromotion", onServerPromotion);
     socket.on("serverUndo", onServerUndo);
     socket.on("serverRedo", onServerRedo);
+    socket.on("serverProfiles", onServerProfiles);
+    socket.on("serverUndoState", onServerUndoState);
+    socket.on("serverPresence", onPresence);
+    socket.on("serverSnapshot", onSnapshot);
 
     return () => {
       socket.off("startGame", onStart);
@@ -413,6 +524,10 @@ export function useChessGame(): ChessGame {
       socket.off("serverPawnPromotion", onServerPromotion);
       socket.off("serverUndo", onServerUndo);
       socket.off("serverRedo", onServerRedo);
+      socket.off("serverProfiles", onServerProfiles);
+      socket.off("serverUndoState", onServerUndoState);
+      socket.off("serverPresence", onPresence);
+      socket.off("serverSnapshot", onSnapshot);
     };
   }, [addMoveRow, applyMove, playerId, setPieceSquare, showTargets]);
 
@@ -431,7 +546,8 @@ export function useChessGame(): ChessGame {
       setHighlightMoves([]);
       setHighlightCaptures([]);
       setSelectedKey(null);
-      setGameOver(null);
+      setResult(null);
+      setStarted(true);
     };
     socket.on("dev:state", onDevState);
     return () => {
@@ -551,19 +667,34 @@ export function useChessGame(): ChessGame {
     selectedKey,
     messages,
     moveRows,
-    gameOver,
+    result,
+    started,
+    profiles,
+    undoState,
+    undoEvent,
+    presence,
+    resumed,
     timer,
     selectPiece,
     moveTo,
     clearSelection,
     sendChat: (text) => socket.emit("chatText", playerId, text),
-    // The engine lets only the player who made the last move undo it (and
-    // redo it). In hot-seat mode that's whoever isn't to move / is to move.
-    undo:   () => socket.emit("undo", hotSeat ? (currentTurn === PLAYER1 ? PLAYER2 : PLAYER1) : playerId),
+    setProfile: (profile) => {
+      profileRef.current = profile;
+      if (socket.connected) socket.emit("setProfile", playerId, profile);
+    },
+    // The engine lets only the player who made the last move undo it, so a
+    // request is made while the opponent is to move. In hot-seat mode (dev)
+    // there's nobody to ask: the relay's dev-only immediate undo is used.
+    requestUndo: () =>
+      hotSeat
+        ? socket.emit("undo", oppositePlayer(currentTurn))
+        : socket.emit("undoRequest", playerId),
+    cancelUndo:  () => socket.emit("undoCancel", playerId),
+    respondUndo: (accept) => socket.emit("undoRespond", playerId, accept),
     redo:   () => socket.emit("redo", hotSeat ? currentTurn : playerId),
     resign: () => socket.emit("resign", playerId),
     reset:  () => socket.emit("reset", playerId),
-    dismissGameOver: () => setGameOver(null),
     dev: import.meta.env.DEV ? { hotSeat, setHotSeat } : undefined,
   };
 }

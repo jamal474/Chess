@@ -81,114 +81,64 @@ export default function Board({
   const rows = rowsFor(playerId);
   const cols = colsFor(playerId);
 
-  const LABEL = "18px";  // rank / file label track width
-
+  // The board is exactly 8×8 squares and fills its (square) parent, so every
+  // square is square. Coordinates sit inside the edge squares instead of in
+  // gutters around the board, which used to stretch the squares sideways.
   return (
     <DndContext sensors={sensors} onDragStart={onDragStart} onDragEnd={onDragEnd}>
       <div
         className={[
-          "w-full h-full flex flex-col border-3 border-black shadow-brut bg-black",
-          disabled ? "pointer-events-none opacity-95" : "",
+          "w-full h-full grid grid-rows-8 border-3 border-black shadow-brut bg-black",
+          disabled ? "pointer-events-none" : "",
         ].join(" ")}
       >
-        {/* Rank labels | 8x8 board | Rank labels */}
-        <div
-          className="flex-1 min-h-0 grid"
-          style={{ gridTemplateColumns: `${LABEL} 1fr ${LABEL}` }}
-        >
-          <RankLabels rows={rows} />
-          <div className="grid grid-rows-8 min-h-0">
-            {rows.map((row) => (
-              <div key={row} className="grid grid-cols-8 min-h-0">
-                {cols.map((col) => {
-                  const id: SquareId = `${row}${col}`;
-                  const parity: 0 | 1 = ((row + col) % 2) as 0 | 1;
-                  const piece = bySquare.get(id);
-                  const selected =
-                    Boolean(piece) && selectedKey === pieceKey(piece!);
-                  return (
-                    <Square
-                      key={id}
-                      id={id}
-                      parity={parity}
-                      theme={theme}
-                      isMove={highlightMoves.includes(id)}
-                      isCapture={highlightCaptures.includes(id)}
-                      isRecent={
-                        Boolean(recentMove) &&
-                        (recentMove!.from === id || recentMove!.to === id)
+        {rows.map((row, ri) => (
+          <div key={row} className="grid grid-cols-8 min-h-0">
+            {cols.map((col, ci) => {
+              const id: SquareId = `${row}${col}`;
+              const parity: 0 | 1 = ((row + col) % 2) as 0 | 1;
+              const piece = bySquare.get(id);
+              const selected =
+                Boolean(piece) && selectedKey === pieceKey(piece!);
+              return (
+                <Square
+                  key={id}
+                  id={id}
+                  parity={parity}
+                  theme={theme}
+                  rankLabel={ci === 0 ? String(row) : undefined}
+                  fileLabel={ri === rows.length - 1 ? String.fromCharCode(96 + col) : undefined}
+                  isMove={highlightMoves.includes(id)}
+                  isCapture={highlightCaptures.includes(id)}
+                  isRecent={
+                    Boolean(recentMove) &&
+                    (recentMove!.from === id || recentMove!.to === id)
+                  }
+                  isCheck={checkedKingSquare === id}
+                  isSelected={selected}
+                  onClick={() => onSquareClick(id)}
+                >
+                  {piece && (
+                    <ChessPiece
+                      piece={piece}
+                      draggable={
+                        !disabled &&
+                        piece.color === (activePlayerId === PLAYER1 ? "W" : "B")
                       }
-                      isCheck={checkedKingSquare === id}
-                      isSelected={selected}
-                      onClick={() => onSquareClick(id)}
-                    >
-                      {piece && (
-                        <ChessPiece
-                          piece={piece}
-                          draggable={
-                            !disabled &&
-                            piece.color === (activePlayerId === PLAYER1 ? "W" : "B")
-                          }
-                          selected={selected}
-                          onSelect={() => onSelectPiece(piece)}
-                        />
-                      )}
-                    </Square>
-                  );
-                })}
-              </div>
-            ))}
+                      selected={selected}
+                      onSelect={() => onSelectPiece(piece)}
+                    />
+                  )}
+                </Square>
+              );
+            })}
           </div>
-          <RankLabels rows={rows} align="right" />
-        </div>
-
-        <FileLabels cols={cols} labelW={LABEL} />
+        ))}
       </div>
 
       <DragOverlay dropAnimation={null}>
         {dragged ? <ChessPieceOverlay piece={dragged} /> : null}
       </DragOverlay>
     </DndContext>
-  );
-}
-
-function RankLabels({
-  rows,
-  align = "left",
-}: {
-  rows: number[];
-  align?: "left" | "right";
-}) {
-  return (
-    <div
-      className={`grid grid-rows-8 text-white text-[10px] font-mono ${
-        align === "right" ? "text-right" : "text-left"
-      }`}
-    >
-      {rows.map((r) => (
-        <div key={r} className="flex items-center justify-center opacity-70">
-          {r}
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function FileLabels({ cols, labelW }: { cols: number[]; labelW: string }) {
-  return (
-    <div
-      className="grid shrink-0"
-      style={{ gridTemplateColumns: `${labelW} 1fr ${labelW}` }}
-    >
-      <div />
-      <div className="grid grid-cols-8 text-white text-[10px] font-mono py-0.5">
-        {cols.map((c) => (
-          <div key={c} className="flex items-center justify-center opacity-70">
-            {String.fromCharCode(96 + c)}
-          </div>
-        ))}
-      </div>
-      <div />
-    </div>
   );
 }

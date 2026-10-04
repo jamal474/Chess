@@ -12,10 +12,12 @@ export default function NavBar({ onOpenThemes, onReset, onLeave }: Props) {
     <div className="relative">
       <button
         onClick={() => setOpen((v) => !v)}
-        className="btn btn-primary px-3 py-2"
+        className="btn btn-primary w-11 h-11 p-0 text-xl"
         title="Menu"
+        aria-label="Menu"
+        aria-expanded={open}
       >
-        ☰ MENU
+        ☰
       </button>
       {open && (
         <>

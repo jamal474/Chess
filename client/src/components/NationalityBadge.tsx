@@ -1,9 +1,13 @@
 import { useEffect, useState } from "react";
 import { log } from "../lib/logger";
+import type { Country } from "../lib/types";
+import Flag from "./Flag";
 
-type Nationality = { code: string; name: string };
+type Nationality = Country;
 
 const CACHE_KEY = "chess.nationality";
+// A country the player picked themselves; wins over the IP lookup.
+const OVERRIDE_KEY = "chess.country";
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 
 function readCache(): Nationality | null {
@@ -27,6 +31,27 @@ function writeCache(v: Nationality) {
     );
   } catch {
     /* private mode, quota etc. — silent */
+  }
+}
+
+function readChosen(): Nationality | null {
+  try {
+    const raw = localStorage.getItem(OVERRIDE_KEY);
+    if (!raw) return null;
+    const v = JSON.parse(raw) as Nationality;
+    return v?.code && v?.name ? v : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Remembers the country the player picked (null forgets it). */
+export function saveChosenCountry(v: Nationality | null) {
+  try {
+    if (v) localStorage.setItem(OVERRIDE_KEY, JSON.stringify(v));
+    else localStorage.removeItem(OVERRIDE_KEY);
+  } catch {
+    /* private mode — silent */
   }
 }
 
@@ -63,7 +88,7 @@ async function fetchNationality(): Promise<Nationality | null> {
 /** Hook — returns the detected nationality, or null while still loading / unavailable. */
 export function useNationality(): Nationality | null {
   const [nat, setNat] = useState<Nationality | null>(
-    () => readQueryOverride() || readCache()
+    () => readQueryOverride() || readChosen() || readCache()
   );
 
   useEffect(() => {
@@ -96,14 +121,7 @@ export default function NationalityBadge({ heightPx = 32 }: { heightPx?: number 
   if (!nat) return null;
   return (
     <div className="flex items-center gap-2" title={nat.name}>
-      <img
-        src={`https://flagcdn.com/w80/${nat.code}.png`}
-        srcSet={`https://flagcdn.com/w160/${nat.code}.png 2x`}
-        alt={nat.name}
-        loading="lazy"
-        style={{ height: heightPx, width: "auto" }}
-        className="block border-2 border-black object-cover"
-      />
+      <Flag country={nat} height={heightPx} />
       <span className="label font-mono">{nat.code.toUpperCase()}</span>
     </div>
   );

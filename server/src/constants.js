@@ -54,6 +54,14 @@ const SOCKET_EVENT = Object.freeze({
   PAWN_PROMOTION:                  "pawnPromotion",
   UPDATE_ALREADY_PROMOTED_PAWN_OF: "updateAlreadyPromotedPawnOf",
   GET_ALREADY_PROMOTED_PAWN_OF:    "getAlreadyPromotedPawnOf",
+  // (playerId, { name, country: { code, name } | null })
+  SET_PROFILE:                     "setProfile",
+  // Undo is a request the opponent has to approve.
+  UNDO_REQUEST:                    "undoRequest",  // (playerId)
+  UNDO_RESPOND:                    "undoRespond",  // (playerId, accept: boolean)
+  UNDO_CANCEL:                     "undoCancel",   // (playerId)
+  // Leaving the game page. A closed tab or lost connection counts the same.
+  LEAVE_ROOM:                      "leaveRoom",
 
   // server → client
   START_GAME:            "startGame",
@@ -73,10 +81,33 @@ const SOCKET_EVENT = Object.freeze({
   SERVER_RESIGN:         "serverResign",
   SERVER_RESET:          "serverReset",
   SERVER_PAWN_PROMOTION: "serverPawnPromotion",
+  // ({ pl1: Profile | null, pl2: Profile | null })
+  SERVER_PROFILES:       "serverProfiles",
+  // (UndoState, event?) — see RoomRegistry.undoState(); event is
+  // { type: "requested" | "accepted" | "declined" | "cancelled" | "expired" | "failed", by }.
+  SERVER_UNDO_STATE:     "serverUndoState",
+  // ({ seats: {pl1, pl2}: boolean, paused, left: PlayerId | null, elapsed })
+  // Sent whenever a seat empties or fills. A started game pauses while a seat
+  // is empty and resumes when someone takes it.
+  SERVER_PRESENCE:       "serverPresence",
+  // ({ pieces, moveRows, recentMove, turn, elapsed }) — the whole position,
+  // for a player taking over a seat in a game already under way.
+  SERVER_SNAPSHOT:       "serverSnapshot",
 });
 
 // Chat text is clipped to this length before broadcast — defence-in-depth
 // against a rogue client hammering the room.
 const MAX_CHAT_LENGTH = 500;
 
-module.exports = { PLAYER, CPP_REQ, STATUS, MATE_STATUS, SOCKET_EVENT, MAX_CHAT_LENGTH };
+// Player names are clipped to this many characters.
+const MAX_NAME_LENGTH = 16;
+
+// Each player may take back at most this many moves per game, and only with
+// the opponent's approval. An unanswered request is declined after the timeout.
+const MAX_UNDOS = 3;
+const UNDO_REQUEST_TIMEOUT_MS = 15000;
+
+module.exports = {
+  PLAYER, CPP_REQ, STATUS, MATE_STATUS, SOCKET_EVENT,
+  MAX_CHAT_LENGTH, MAX_NAME_LENGTH, MAX_UNDOS, UNDO_REQUEST_TIMEOUT_MS,
+};
