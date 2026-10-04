@@ -7,7 +7,8 @@ const { buildSnapshot } = require("../state/snapshot");
  *   * roomExistsCheck — the join dialog on the menu page asks whether a code
  *     is joinable and which seat it'd take.
  *   * createRoom      — one player claims a code and picks a colour.
- *   * joinRoom        — a player takes the empty seat. In a fresh room that
+ *   * joinRoom        — a player takes the empty seat (in a matchmade room,
+ *                       the seat their ticket reserves). In a fresh room that
  *                       kicks the engine into setting up the board (it then
  *                       broadcasts startGame). In a game already under way
  *                       the newcomer is sent the position and play resumes.
@@ -25,7 +26,8 @@ function attachRoomHandlers(socket, deps) {
       typeof cb === "function" && cb(canJoin, joinerPlayerId || "");
     try {
       if (!isValidRoomId(roomId)) return respond(false, "");
-      const seat = rooms.has(roomId) ? rooms.freeSeat(roomId) : null;
+      // Matchmade rooms are reserved for their two players.
+      const seat = rooms.has(roomId) && !rooms.match(roomId) ? rooms.freeSeat(roomId) : null;
       const canJoin = Boolean(seat) && rooms.occupied(roomId) >= 1;
       log.debug("room.exists", `room=${roomId} canJoin=${canJoin} seat=${seat ?? "-"}`);
       respond(canJoin, canJoin ? seat : "");
@@ -42,6 +44,7 @@ function attachRoomHandlers(socket, deps) {
     if (rooms.roomIdFor(socket.id) === roomId) return; // already here (page re-mounted)
 
     if (rooms.has(roomId)) {
+      if (rooms.match(roomId)) return log.warn("room.create", `room=${roomId} is matchmade; use joinRoom with a ticket`);
       // The creator reloading the page: their seat is free again, take it back.
       if (rooms.isSeatFree(roomId, chosenPlayerId) && rooms.occupied(roomId) > 0) {
         log.info("room.create", `socket=${socket.id} back in room=${roomId} as ${chosenPlayerId}`);
@@ -58,12 +61,20 @@ function attachRoomHandlers(socket, deps) {
     log.info("room.create", `socket=${socket.id} created room=${roomId} as ${chosenPlayerId} (rooms=${rooms.size()})`);
   });
 
-  socket.on(SOCKET_EVENT.JOIN_ROOM, (roomId) => {
+  // joinRoom(roomId, [ticket]) — the ticket is required for a matchmade room.
+  socket.on(SOCKET_EVENT.JOIN_ROOM, (roomId, ticket) => {
     if (!isValidRoomId(roomId)) return log.warn("room.join", `bad roomId=${JSON.stringify(roomId)}`);
     if (rooms.roomIdFor(socket.id) === roomId) return; // already here (page re-mounted)
     if (!rooms.has(roomId)) return log.warn("room.join", `room=${roomId} does not exist`);
-    const seat = rooms.freeSeat(roomId);
-    if (!seat) return log.warn("room.join", `room=${roomId} already full`);
+    let seat;
+    if (rooms.match(roomId)) {
+      seat = rooms.seatForTicket(roomId, ticket);
+      if (!seat) return log.warn("room.join", `room=${roomId} is matchmade and the ticket doesn't fit`);
+      if (!rooms.isSeatFree(roomId, seat)) return log.warn("room.join", `room=${roomId} seat ${seat} is taken`);
+    } else {
+      seat = rooms.freeSeat(roomId);
+      if (!seat) return log.warn("room.join", `room=${roomId} already full`);
+    }
     takeSeat(roomId, seat);
   });
 
@@ -79,6 +90,7 @@ function attachRoomHandlers(socket, deps) {
 
     // The newcomer needs whatever the other player already told us about themselves.
     io.to(roomId).emit(SOCKET_EVENT.SERVER_PROFILES, rooms.profiles(roomId));
+    if (rooms.match(roomId)) deps.matchmaker?.seated(roomId);
 
     if (!rooms.isStarted(roomId)) {
       // Fresh room: the engine's answer fires `startGame` on both sockets.
@@ -181,4 +193,4 @@ function isValidPlayerId(v) {
   return v === PLAYER.PLAYER1 || v === PLAYER.PLAYER2;
 }
 
-module.exports = { attachRoomHandlers, leaveRoom };
+module.exports = { attachRoomHandlers, leaveRoom, cleanProfile };

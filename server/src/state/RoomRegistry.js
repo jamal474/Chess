@@ -68,6 +68,9 @@ class RoomRegistry {
       moves: [],   // { player, pieceId, from, to, promo }
       undone: [],  // the engine keeps one level of redo
       clock: freshClock(),
+      // Rooms made by the matchmaker: { tickets: { pl1, pl2 } }. Seats are
+      // reserved; only the holder of a seat's ticket may take it.
+      match: null,
     });
     log.debug("rooms", `create room=${roomId} creator=${creatorId}`);
   }
@@ -200,6 +203,35 @@ class RoomRegistry {
   occupied(roomId) {
     const seats = this._rooms.get(roomId)?.seats;
     return seats ? Object.values(seats).filter(Boolean).length : 0;
+  }
+
+  // ---------- matchmade rooms ----------
+
+  setMatch(roomId, match) {
+    const room = this._rooms.get(roomId);
+    if (room) room.match = match;
+  }
+
+  /** The match record of a matchmade room, or null for a private room. */
+  match(roomId) {
+    return this._rooms.get(roomId)?.match ?? null;
+  }
+
+  /** The seat a ticket reserves, or null. */
+  seatForTicket(roomId, ticket) {
+    const tickets = this._rooms.get(roomId)?.match?.tickets;
+    if (!tickets || typeof ticket !== "string") return null;
+    return Object.keys(tickets).find((p) => tickets[p] === ticket) ?? null;
+  }
+
+  /** Players seated in games that have started. */
+  playingCount() {
+    let n = 0;
+    for (const room of this._rooms.values()) {
+      if (!room.turn) continue;
+      for (const s of Object.values(room.seats)) if (s) n++;
+    }
+    return n;
   }
 
   // ---------- pause / clock / game over ----------

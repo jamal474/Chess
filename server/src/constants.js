@@ -62,6 +62,11 @@ const SOCKET_EVENT = Object.freeze({
   UNDO_CANCEL:                     "undoCancel",   // (playerId)
   // Leaving the game page. A closed tab or lost connection counts the same.
   LEAVE_ROOM:                      "leaveRoom",
+  // Matchmaking. The browser's id travels in the handshake (auth.clientId).
+  LOBBY_SUBSCRIBE:                 "lobby:subscribe",   // (ack(stats)) — live counts while on the menu
+  LOBBY_UNSUBSCRIBE:               "lobby:unsubscribe",
+  QUEUE_JOIN:                      "queue:join",        // (profile, ack({ ok, status | error }))
+  QUEUE_LEAVE:                     "queue:leave",       // (ack?)
 
   // server → client
   START_GAME:            "startGame",
@@ -93,6 +98,15 @@ const SOCKET_EVENT = Object.freeze({
   // ({ pieces, moveRows, recentMove, turn, elapsed }) — the whole position,
   // for a player taking over a seat in a game already under way.
   SERVER_SNAPSHOT:       "serverSnapshot",
+  // ({ online, searching, playing }) to sockets subscribed to the lobby,
+  // at most every LOBBY_STATS_INTERVAL_MS and only when something changed.
+  LOBBY_STATS:           "lobby:stats",
+  // ({ roomId, playerId, ticket, opponent: Profile }) — go to the game page
+  // and joinRoom(roomId, ticket) within MATCH_CLAIM_TIMEOUT_MS.
+  MATCH_FOUND:           "match:found",
+  // ({ reason, requeued }) — the other player never showed up. requeued: you
+  // are back at the front of the queue.
+  MATCH_CANCELLED:       "match:cancelled",
 });
 
 // Chat text is clipped to this length before broadcast — defence-in-depth
@@ -107,7 +121,16 @@ const MAX_NAME_LENGTH = 16;
 const MAX_UNDOS = 3;
 const UNDO_REQUEST_TIMEOUT_MS = 15000;
 
+// Matchmaking: both players must join their reserved seats within this time
+// after a match is made, or it's called off.
+const MATCH_CLAIM_TIMEOUT_MS = 10000;
+// How often the lobby counts may be pushed (only when they changed).
+const LOBBY_STATS_INTERVAL_MS = 1500;
+// socket.io room of sockets that want the lobby counts.
+const LOBBY_ROOM = "lobby";
+
 module.exports = {
   PLAYER, CPP_REQ, STATUS, MATE_STATUS, SOCKET_EVENT,
   MAX_CHAT_LENGTH, MAX_NAME_LENGTH, MAX_UNDOS, UNDO_REQUEST_TIMEOUT_MS,
+  MATCH_CLAIM_TIMEOUT_MS, LOBBY_STATS_INTERVAL_MS, LOBBY_ROOM,
 };
