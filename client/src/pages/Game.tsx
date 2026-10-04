@@ -16,6 +16,7 @@ import { UndoNotice, UndoPendingBar, UndoRequestDialog } from "../components/Und
 import { useNationality } from "../components/NationalityBadge";
 import PausedOverlay from "../components/PausedOverlay";
 import { readName, saveProfile } from "../lib/identity";
+import { clearMatch } from "../lib/session";
 
 // Dev tools panel. import.meta.env.DEV is false in production builds, so the
 // import below is dropped and the panel's code never reaches the bundle.
@@ -89,8 +90,31 @@ export default function Game() {
   const me = game.playerId;
   const opp = oppositePlayer(me);
 
+  // ---------- Matchmade games ----------
+  // The opponent never sat down: back to the menu (searching again if the
+  // relay requeued us).
+  useEffect(() => {
+    if (!game.matchCancelled) return;
+    clearMatch();
+    const requeued = game.matchCancelled.requeued;
+    nav("/", {
+      replace: true,
+      state: requeued
+        ? { searchingSince: Date.now(), message: "OPPONENT DIDN'T SHOW · BACK IN THE QUEUE" }
+        : { message: "MATCH TIMED OUT · TRY AGAIN" },
+    });
+  }, [game.matchCancelled, nav]);
+
+  // The relay has our profile from the queue; keep the hook's copy so it is
+  // re-sent if the connection drops and we take the seat back.
+  useEffect(() => {
+    if (game.isMatch) game.setProfile({ name: readName() || "PLAYER", country: nationality });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [game.isMatch, nationality]);
+
   // ---------- Name prompt ----------
-  const [needName, setNeedName] = useState(true);
+  // Matchmade games already know your name (it was set on the menu).
+  const [needName, setNeedName] = useState(() => !game.isMatch);
   const submitProfile = (profile: Profile) => {
     saveProfile(profile, nationality);
     game.setProfile(profile);
@@ -259,19 +283,26 @@ export default function Game() {
           </div>
 
           <div className="brut h-11 min-w-0 flex divide-x-[3px] divide-black overflow-hidden">
-            <div className="flex items-center gap-2 sm:gap-2.5 pl-2.5 sm:pl-3.5 pr-2 min-w-0">
-              <span className="label opacity-70 text-[10px] hidden sm:inline">ROOM</span>
-              <span className="font-mono text-base sm:text-lg font-bold tracking-wider leading-none truncate">{game.roomCode}</span>
-              <button
-                onClick={copyRoom}
-                type="button"
-                className="shrink-0 text-[10px] font-bold uppercase tracking-wider px-1.5 py-1 border-2 border-black bg-white hover:bg-black hover:text-white leading-none"
-                title="Copy room code"
-                aria-label="Copy room code"
-              >
-                {copied ? "✓" : "COPY"}
-              </button>
-            </div>
+            {game.isMatch ? (
+              // Matchmade: nobody joins by code, so no code to show.
+              <div className="flex items-center px-3 sm:px-3.5">
+                <span className="label text-[10px] sm:text-[11px] whitespace-nowrap">● ONLINE MATCH</span>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 sm:gap-2.5 pl-2.5 sm:pl-3.5 pr-2 min-w-0">
+                <span className="label opacity-70 text-[10px] hidden sm:inline">ROOM</span>
+                <span className="font-mono text-base sm:text-lg font-bold tracking-wider leading-none truncate">{game.roomCode}</span>
+                <button
+                  onClick={copyRoom}
+                  type="button"
+                  className="shrink-0 text-[10px] font-bold uppercase tracking-wider px-1.5 py-1 border-2 border-black bg-white hover:bg-black hover:text-white leading-none"
+                  title="Copy room code"
+                  aria-label="Copy room code"
+                >
+                  {copied ? "✓" : "COPY"}
+                </button>
+              </div>
+            )}
             <div className="shrink-0 flex items-center gap-2.5 px-3 sm:px-4 bg-black text-white" aria-label={`Time ${time}`}>
               <span className="text-[10px] font-bold tracking-[0.12em] opacity-70 hidden sm:inline">TIME</span>
               <span className="font-mono text-lg sm:text-xl font-bold tabular-nums leading-none tracking-tight">{clock}</span>
@@ -288,8 +319,14 @@ export default function Game() {
             <PlayerStrip
               {...stripProps(opp)}
               waiting={!game.started || oppAway}
-              waitingText={oppAway ? `${lastOppName.current ?? "OPPONENT"} LEFT · WAITING…` : undefined}
-              waitingHint={`SHARE ROOM ${game.roomCode}`}
+              waitingText={
+                oppAway
+                  ? `${lastOppName.current ?? "OPPONENT"} LEFT · WAITING…`
+                  : game.isMatch
+                  ? `CONNECTING TO ${lastOppName.current ?? "OPPONENT"}…`
+                  : undefined
+              }
+              waitingHint={game.isMatch ? undefined : `SHARE ROOM ${game.roomCode}`}
             />
 
             <div className="relative shrink-0" style={{ width: board, height: board }}>

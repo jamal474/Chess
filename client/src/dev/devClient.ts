@@ -104,6 +104,7 @@ export function prepareSoloGame(opts: { as?: PlayerId; load?: LoadSource } = {})
   const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
   let code = "DEV";
   for (let i = 0; i < 4; i++) code += chars[Math.floor(Math.random() * chars.length)];
+  sessionStorage.removeItem("matchTicket");
   sessionStorage.setItem("playerID", opts.as ?? PLAYER1);
   sessionStorage.setItem("isCreator", "true");
   sessionStorage.setItem("createRoomId", code);

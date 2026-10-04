@@ -46,6 +46,7 @@ import {
   type UndoState,
 } from "../lib/types";
 import { useTimer } from "./useTimer";
+import { matchTicket } from "../lib/session";
 
 export type ChatMsg = { from: PlayerId; text: string };
 
@@ -96,6 +97,10 @@ export type ChessGame = {
   // room
   roomCode: string;
   isCreator: boolean;
+  /** A matchmade game: the seat is held by a ticket, not a shared room code. */
+  isMatch: boolean;
+  /** The relay called the match off before it started (the opponent never came). */
+  matchCancelled: { requeued: boolean } | null;
   playerId: PlayerId;
   /** Who this tab moves for right now: playerId, or whoever's turn it is in hot-seat mode. */
   actingPlayer: PlayerId;
@@ -152,6 +157,8 @@ export function useChessGame(): ChessGame {
       ? sessionStorage.getItem("createRoomId")
       : sessionStorage.getItem("joinRoomId")) || "";
   const playerId = (sessionStorage.getItem("playerID") as PlayerId) || PLAYER1;
+  const ticket = isCreator ? null : matchTicket();
+  const isMatch = Boolean(ticket);
 
   const [pieces, setPieces] = useState<Piece[]>(() => initialPieces());
   const [currentTurn, setCurrentTurn] = useState<PlayerId>(PLAYER1);
@@ -171,6 +178,7 @@ export function useChessGame(): ChessGame {
   const [undoEvent, setUndoEvent] = useState<(UndoEvent & { at: number }) | null>(null);
   const [presence, setPresence] = useState<Presence | null>(null);
   const [resumed, setResumed] = useState(false);
+  const [matchCancelled, setMatchCancelled] = useState<{ requeued: boolean } | null>(null);
 
   // Hot seat (dev only): this tab moves for whichever side is to play. In a
   // production build import.meta.env.DEV is false, so this is always off.
@@ -271,8 +279,9 @@ export function useChessGame(): ChessGame {
           import("../dev/devClient").then((m) => m.startSolo(roomCode));
         }
       } else {
-        log.info("useChessGame", `joinRoom ${roomCode}`);
-        socket.emit("joinRoom", roomCode);
+        log.info("useChessGame", `joinRoom ${roomCode}${ticket ? " (matched)" : ""}`);
+        if (ticket) socket.emit("joinRoom", roomCode, ticket);
+        else socket.emit("joinRoom", roomCode);
       }
       if (profileRef.current) socket.emit("setProfile", playerId, profileRef.current);
     };
@@ -289,7 +298,7 @@ export function useChessGame(): ChessGame {
         socket.emit("leaveRoom");
       }, 0);
     };
-  }, [isCreator, playerId, roomCode]);
+  }, [isCreator, playerId, roomCode, ticket]);
 
   // ---------- Socket handlers ----------
   useEffect(() => {
@@ -506,6 +515,8 @@ export function useChessGame(): ChessGame {
     socket.on("serverRedo", onServerRedo);
     socket.on("serverProfiles", onServerProfiles);
     socket.on("serverUndoState", onServerUndoState);
+    const onMatchCancelled = (r: { requeued: boolean }) => setMatchCancelled({ requeued: Boolean(r?.requeued) });
+    socket.on("match:cancelled", onMatchCancelled);
     socket.on("serverPresence", onPresence);
     socket.on("serverSnapshot", onSnapshot);
 
@@ -526,6 +537,7 @@ export function useChessGame(): ChessGame {
       socket.off("serverRedo", onServerRedo);
       socket.off("serverProfiles", onServerProfiles);
       socket.off("serverUndoState", onServerUndoState);
+      socket.off("match:cancelled", onMatchCancelled);
       socket.off("serverPresence", onPresence);
       socket.off("serverSnapshot", onSnapshot);
     };
@@ -655,6 +667,8 @@ export function useChessGame(): ChessGame {
   return {
     roomCode,
     isCreator,
+    isMatch,
+    matchCancelled,
     playerId,
     actingPlayer,
     pieces,

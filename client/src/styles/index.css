@@ -148,6 +148,26 @@ body {
   .confetti-piece { animation: none; display: none; }
 }
 
+/* Matchmaking: an indeterminate "searching" bar and the match-found countdown. */
+@keyframes searching-slide {
+  from { background-position: 0 0; }
+  to   { background-position: 48px 0; }
+}
+.searching-bar {
+  background: repeating-linear-gradient(-45deg, #facc15 0 12px, #fff 12px 24px);
+  background-size: 48px 100%;
+  animation: searching-slide 0.8s linear infinite;
+}
+@keyframes match-countdown {
+  from { width: 0; }
+  to   { width: 100%; }
+}
+.match-countdown { animation: match-countdown linear forwards; }
+@media (prefers-reduced-motion: reduce) {
+  .searching-bar { animation: none; }
+  .match-countdown { animation: none; width: 100%; }
+}
+
 /* Utility to keep drag preview above everything */
 .drag-overlay-piece {
   filter: drop-shadow(4px 4px 0 rgba(0, 0, 0, 0.6));
