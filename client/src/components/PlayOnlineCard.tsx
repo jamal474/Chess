@@ -6,6 +6,9 @@ import Flag from "./Flag";
 
 const LBL = "text-[11px] font-bold tracking-[0.12em] uppercase";
 
+/** After this long searching, offer a private room instead. */
+const INVITE_AFTER_S = 60;
+
 function useElapsed(since: number | null) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -13,9 +16,8 @@ function useElapsed(since: number | null) {
     const t = window.setInterval(() => setNow(Date.now()), 500);
     return () => window.clearInterval(t);
   }, [since]);
-  if (!since) return "0:00";
-  const s = Math.max(0, Math.floor((now - since) / 1000));
-  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+  const s = since ? Math.max(0, Math.floor((now - since) / 1000)) : 0;
+  return { seconds: s, text: `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}` };
 }
 
 /** The menu's main card: find a random opponent, see the search, cancel it. */
@@ -28,6 +30,7 @@ export default function PlayOnlineCard({
   onFind,
   onCancel,
   onEditProfile,
+  onInviteFriend,
 }: {
   state: MatchState;
   stats: LobbyStats | null;
@@ -37,6 +40,8 @@ export default function PlayOnlineCard({
   onFind: () => void;
   onCancel: () => void;
   onEditProfile: () => void;
+  /** Stop searching and open a private room to share instead. */
+  onInviteFriend: () => void;
 }) {
   const searching = state.status === "searching";
   const elapsed = useElapsed(searching ? state.since : null);
@@ -88,7 +93,7 @@ export default function PlayOnlineCard({
           <div className="flex-1 min-w-0 flex flex-col gap-3">
             <div className="flex items-baseline gap-3 flex-wrap">
               <p className="m-0 font-display text-2xl sm:text-3xl leading-none tracking-tight">SEARCHING…</p>
-              <span className="font-mono text-xl font-bold tabular-nums">{elapsed}</span>
+              <span className="font-mono text-xl font-bold tabular-nums">{elapsed.text}</span>
             </div>
             <div className="searching-bar h-3 border-2 border-black" aria-hidden="true" />
             <p className="m-0 text-sm">
@@ -103,6 +108,21 @@ export default function PlayOnlineCard({
           </div>
           <button type="button" onClick={onCancel} className="btn text-lg py-4 px-6 shrink-0">
             ✕ CANCEL
+          </button>
+        </div>
+      )}
+
+      {searching && elapsed.seconds >= INVITE_AFTER_S && (
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 border-t-3 border-black px-4 sm:px-6 py-3 bg-[#fafafa]">
+          <p className="m-0 flex-1 text-sm">
+            <b>Taking a while?</b> Few players are around right now. Invite a friend to a private room instead.
+          </p>
+          <button
+            type="button"
+            onClick={onInviteFriend}
+            className="shrink-0 self-start sm:self-auto border-3 border-black bg-white px-4 py-2 text-[11px] font-bold tracking-[0.12em] uppercase hover:bg-black hover:text-white"
+          >
+            INVITE A FRIEND →
           </button>
         </div>
       )}

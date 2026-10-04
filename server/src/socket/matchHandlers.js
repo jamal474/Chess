@@ -1,6 +1,7 @@
 const { SOCKET_EVENT } = require("../constants");
 const { log } = require("../logger");
 const { cleanProfile, leaveRoom } = require("./roomHandlers");
+const { rateLimit, LIMITS } = require("./rateLimit");
 
 /**
  * Lobby counts and the matchmaking queue:
@@ -13,11 +14,16 @@ const { cleanProfile, leaveRoom } = require("./roomHandlers");
 function attachMatchHandlers(socket, deps) {
   const { rooms, matchmaker, lobby } = deps;
   const reply = (cb, v) => typeof cb === "function" && cb(v);
+  const allowQueue = rateLimit(socket, "queue", LIMITS.queue);
 
   socket.on(SOCKET_EVENT.LOBBY_SUBSCRIBE, (cb) => reply(cb, { ok: true, stats: lobby.subscribe(socket) }));
   socket.on(SOCKET_EVENT.LOBBY_UNSUBSCRIBE, () => lobby.unsubscribe(socket));
 
   socket.on(SOCKET_EVENT.QUEUE_JOIN, (profile, cb) => {
+    if (!allowQueue()) {
+      log.warn("match", `socket=${socket.id} queue:join rate-limited`);
+      return reply(cb, { ok: false, error: "too many tries, wait a few seconds" });
+    }
     const clean = cleanProfile(profile);
     if (!clean) return reply(cb, { ok: false, error: "a name is needed to play" });
     // Searching means you're done with whatever room you were in ("Play
@@ -28,6 +34,7 @@ function attachMatchHandlers(socket, deps) {
   });
 
   socket.on(SOCKET_EVENT.QUEUE_LEAVE, (cb) => {
+    allowQueue(); // counts towards the limit; leaving always works
     matchmaker.leave(socket.id);
     reply(cb, { ok: true });
   });

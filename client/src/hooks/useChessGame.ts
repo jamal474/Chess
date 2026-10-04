@@ -69,6 +69,8 @@ type Snapshot = {
   recentMove: { from: SquareId; to: SquareId } | null;
   turn: PlayerId;
   elapsed: number;
+  /** Set when the game had already ended (a matched player reloading it). */
+  result?: GameResult | null;
 };
 
 // Leaving the game page tells the relay, so the other player isn't left
@@ -413,10 +415,10 @@ export function useChessGame(): ChessGame {
       setHighlightMoves([]);
       setHighlightCaptures([]);
       setSelectedKey(null);
-      setResult(null);
+      setResult(s.result ?? null);
       setStarted(true);
       setResumed(true);
-      timerRef.current.sync(s.elapsed, true);
+      timerRef.current.sync(s.elapsed, !s.result);
     };
 
     const onServerUndoState = (state: UndoState, event: UndoEvent | null) => {

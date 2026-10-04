@@ -20,22 +20,33 @@
 
 ## About
 
-Chess is a browser game for two people in different places. One player
-creates a room and gets a short code, the other joins with that code, and the
-game starts. No sign-up, no accounts.
+Chess is a browser game for two people in different places. Press **Play
+online** to be paired with the next person looking for a game, or create a
+private room and send a friend its short code. No sign-up, no accounts.
 
 Every move is checked by a dedicated chess engine written in C++, so the
 rules are enforced on the server rather than trusted to the browser.
 
 ## Features
 
+- **Play online.** Instant matchmaking with whoever is searching, with live
+  counts of players online, searching and playing.
 - **Private rooms.** Share a code with a friend and you're playing.
+- **Names and flags.** Each player picks a name; the flag comes from your
+  country (or one you choose).
 - **Full rules.** Check, checkmate, stalemate and pawn promotion are all
   handled by the engine.
-- **Move history.** A running move log, with undo and redo.
+- **Move history.** A running move log.
+- **Undo with permission.** Ask your opponent to take back a move, up to
+  three times a game.
+- **Leave and come back.** If a player leaves, the game pauses; reloading
+  takes your seat back. In private rooms someone new can take over the seat;
+  in online games the other player wins if you're gone for 30 seconds.
 - **In-game chat.** Talk to your opponent while you play.
 - **Resign or reset.** End a game or start a fresh one without leaving the room.
 - **Themes and sound.** Pick a board theme; moves and captures have audio cues.
+- **Works on phones.** The board stays square, and the move list and chat
+  fold away.
 - **Drag or click to move**, with highlighted legal squares.
 
 ## How it works

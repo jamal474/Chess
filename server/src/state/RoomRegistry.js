@@ -104,6 +104,7 @@ class RoomRegistry {
     this.clearAbandon(roomId);
     room.undo = freshUndo();
     room.over = false;
+    room.result = null;
     room.moves = [];
     room.undone = [];
     room.clock = freshClock();
@@ -267,15 +268,24 @@ class RoomRegistry {
     return Math.max(0, Math.floor((now - c.startedAt - c.pausedFor) / 1000));
   }
 
+  result(roomId) {
+    return this._rooms.get(roomId)?.result ?? null;
+  }
+
   isOver(roomId) {
     return Boolean(this._rooms.get(roomId)?.over);
   }
 
-  /** Checkmate, stalemate or resignation: the clock stops. */
-  setOver(roomId) {
+  /**
+   * Checkmate, stalemate, resignation or abandonment: the clock stops.
+   * `result` is { kind, winner } as the browsers know it, kept so a player
+   * who reloads a finished game sees how it ended.
+   */
+  setOver(roomId, result = null) {
     const room = this._rooms.get(roomId);
     if (!room || room.over) return;
     room.over = true;
+    room.result = result;
     room.clock.stoppedAt = room.clock.pausedAt ?? Date.now();
   }
 

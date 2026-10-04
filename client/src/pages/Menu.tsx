@@ -146,6 +146,7 @@ export default function Menu() {
             onFind={onFind}
             onCancel={match.cancel}
             onEditProfile={() => setEditing(true)}
+            onInviteFriend={onCreate}
           />
 
           <div className="flex items-center gap-3" aria-hidden="true">

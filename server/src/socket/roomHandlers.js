@@ -1,6 +1,7 @@
 const { PLAYER, SOCKET_EVENT, MAX_NAME_LENGTH, ABANDON_GRACE_MS } = require("../constants");
 const { log } = require("../logger");
 const { buildSnapshot } = require("../state/snapshot");
+const { rateLimit, LIMITS } = require("./rateLimit");
 
 /**
  * Room lifecycle over socket.io:
@@ -22,11 +23,16 @@ const { buildSnapshot } = require("../state/snapshot");
  */
 function attachRoomHandlers(socket, deps) {
   const { io, rooms, engine } = deps;
+  const allowRoomCheck = rateLimit(socket, "roomCheck", LIMITS.roomCheck);
 
   socket.on(SOCKET_EVENT.ROOM_EXISTS_CHECK, (roomId, cb) => {
     const respond = (canJoin, joinerPlayerId) =>
       typeof cb === "function" && cb(canJoin, joinerPlayerId || "");
     try {
+      if (!allowRoomCheck()) {
+        log.warn("room.exists", `socket=${socket.id} rate-limited`);
+        return respond(false, "");
+      }
       if (!isValidRoomId(roomId)) return respond(false, "");
       // Matchmade rooms are reserved for their two players.
       const seat = rooms.has(roomId) && !rooms.match(roomId) ? rooms.freeSeat(roomId) : null;
@@ -102,6 +108,18 @@ function attachRoomHandlers(socket, deps) {
 
     rooms.setPaused(roomId, false);
     const back = rooms.clearAbandon(roomId); // a matched player made it back in time
+
+    if (rooms.isOver(roomId) && rooms.match(roomId)) {
+      // A matched player reloading a finished game: show it as it ended.
+      socket.emit(SOCKET_EVENT.SERVER_SNAPSHOT, {
+        ...buildSnapshot(rooms.moves(roomId)),
+        turn: rooms.currentTurn(roomId),
+        elapsed: rooms.elapsed(roomId),
+        result: rooms.result(roomId),
+      });
+      io.to(roomId).emit(SOCKET_EVENT.SERVER_PRESENCE, rooms.presence(roomId));
+      return;
+    }
 
     if (rooms.isOver(roomId)) {
       // The last game had ended: a new opponent gets a new game.
@@ -187,9 +205,9 @@ function leaveRoom(socket, { io, rooms, engine }, { explicit = false } = {}) {
       if (rooms.abandoning(roomId)?.deadline !== deadline) return;
       rooms.clearAbandon(roomId);
       rooms.setPaused(roomId, false);
-      rooms.setOver(roomId);
-      rooms.clearLegalMoves(roomId);
       const winner = seat === PLAYER.PLAYER1 ? PLAYER.PLAYER2 : PLAYER.PLAYER1;
+      rooms.setOver(roomId, { kind: "abandon", winner });
+      rooms.clearLegalMoves(roomId);
       log.info("room.leave", `room=${roomId} ${seat} didn't come back: ${winner} wins by abandonment`);
       io.to(roomId).emit(SOCKET_EVENT.SERVER_ABANDON, winner);
       io.to(roomId).emit(SOCKET_EVENT.SERVER_PRESENCE, rooms.presence(roomId));

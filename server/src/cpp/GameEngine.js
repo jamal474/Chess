@@ -128,7 +128,7 @@ class GameEngine extends EventEmitter {
       if (!res) return;
       log.info("engine.resign", `room=${roomId} player=${playerId}`);
       this.rooms.clearLegalMoves(roomId);
-      this.rooms.setOver(roomId);
+      this.rooms.setOver(roomId, { kind: "resign", winner: other(playerId) });
       this._toRoom(roomId, SOCKET_EVENT.SERVER_RESIGN, playerId);
     });
   }
@@ -186,10 +186,10 @@ class GameEngine extends EventEmitter {
     switch (state.check_or_mate_status) {
       case MATE_STATUS.CHECK:      return this._toRoom(roomId, SOCKET_EVENT.CHECK, player);
       case MATE_STATUS.CHECK_MATE:
-        this.rooms.setOver(roomId);
+        this.rooms.setOver(roomId, { kind: "checkmate", winner: other(player) });
         return this._toRoom(roomId, SOCKET_EVENT.CHECK_MATE, player);
       case MATE_STATUS.STALE_MATE:
-        this.rooms.setOver(roomId);
+        this.rooms.setOver(roomId, { kind: "stalemate", winner: null });
         return this._toRoom(roomId, SOCKET_EVENT.STALE_MATE, player);
       case MATE_STATUS.NIL:        return undefined;
       default: log.warn("engine", `unknown check_or_mate_status=${state.check_or_mate_status}`);

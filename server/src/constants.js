@@ -95,8 +95,9 @@ const SOCKET_EVENT = Object.freeze({
   // Sent whenever a seat empties or fills. A started game pauses while a seat
   // is empty and resumes when someone takes it.
   SERVER_PRESENCE:       "serverPresence",
-  // ({ pieces, moveRows, recentMove, turn, elapsed }) — the whole position,
-  // for a player taking over a seat in a game already under way.
+  // ({ pieces, moveRows, recentMove, turn, elapsed, result? }) — the whole
+  // position, for a player taking over a seat in a game already under way
+  // (result: a matched player reloading a game that has ended).
   SERVER_SNAPSHOT:       "serverSnapshot",
   // ({ online, searching, playing }) to sockets subscribed to the lobby,
   // at most every LOBBY_STATS_INTERVAL_MS and only when something changed.
