@@ -4,7 +4,13 @@ import { socket } from "../lib/socket";
 import { log } from "../lib/logger";
 import { PLAYER1, PLAYER2, type PlayerId } from "../lib/types";
 import FloatingPieces from "../components/FloatingPieces";
-import NationalityBadge from "../components/NationalityBadge";
+import { useNationality } from "../components/NationalityBadge";
+import PlayerCard from "../components/PlayerCard";
+import LobbyBar from "../components/LobbyBar";
+import NamePrompt from "../components/NamePrompt";
+import { useLobbyStats } from "../hooks/useLobbyStats";
+import { readName, saveProfile } from "../lib/identity";
+import type { Country, Profile } from "../lib/types";
 
 // Dev-only "solo game" launcher; removed from production builds.
 const DevMenu = import.meta.env.DEV ? lazy(() => import("../dev/DevMenu")) : null;
@@ -34,6 +40,20 @@ export default function Menu() {
   const [choice, setChoice] = useState<Color>("Random");
   const [joinCode, setJoinCode] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const stats = useLobbyStats();
+  const nationality = useNationality();
+  const [name, setName] = useState(readName);
+  const [editing, setEditing] = useState(false);
+  // What the player picked in the editor this visit (undefined: detection's answer).
+  const [chosen, setChosen] = useState<Country | null | undefined>(undefined);
+  const country = chosen === undefined ? nationality : chosen;
+
+  function onSaveProfile(p: Profile) {
+    saveProfile(p, nationality);
+    setName(p.name);
+    setChosen(p.country);
+    setEditing(false);
+  }
 
   function onCreate() {
     const playerId = resolvePlayerId(choice);
@@ -68,12 +88,11 @@ export default function Menu() {
       <FloatingPieces />
 
       <div className="relative z-10 min-h-screen flex flex-col">
-        <header className="border-b-3 border-black bg-white flex items-center justify-between px-6 py-3">
-          <h1 className="font-display text-3xl tracking-tighter leading-none">C H E S S</h1>
-          <div className="brut bg-white px-3 py-1.5">
-            <NationalityBadge heightPx={22} />
-          </div>
+        <header className="border-b-3 border-black bg-white flex items-center justify-between gap-3 px-4 sm:px-6 py-3">
+          <h1 className="font-display text-2xl sm:text-3xl tracking-tighter leading-none shrink-0">C H E S S</h1>
+          <PlayerCard name={name} country={country} onEdit={() => setEditing(true)} />
         </header>
+        <LobbyBar stats={stats} />
 
         <main className="flex-1 flex items-center justify-center p-6">
           <div className="grid lg:grid-cols-2 gap-8 w-full max-w-4xl">
@@ -158,6 +177,19 @@ export default function Menu() {
             </section>
           </div>
         </main>
+
+        <NamePrompt
+          open={editing}
+          kicker="YOUR PLAYER CARD"
+          title="WHO'S PLAYING?"
+          submitLabel="SAVE"
+          onCancel={() => setEditing(false)}
+          roomCode=""
+          showShare={false}
+          defaultName={name}
+          defaultCountry={country}
+          onSubmit={onSaveProfile}
+        />
 
         {DevMenu && (
           <Suspense fallback={null}>

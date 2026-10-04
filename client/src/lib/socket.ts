@@ -1,5 +1,6 @@
 import { io, Socket, type ManagerOptions, type SocketOptions } from "socket.io-client";
 import { log } from "./logger";
+import { getClientId } from "./identity";
 
 // If VITE_SERVER_URL is set we connect there; otherwise same-origin (works when
 // the node server is proxied by nginx under the app's base path).
@@ -19,6 +20,9 @@ const options: Partial<ManagerOptions & SocketOptions> = {
   autoConnect: true,
   transports: ["websocket", "polling"],
   path,
+  // Lets the relay count browsers rather than tabs, and never pair a
+  // browser with itself in matchmaking.
+  auth: { clientId: getClientId() },
 };
 
 export const socket: Socket = url ? io(url, options) : io(options);

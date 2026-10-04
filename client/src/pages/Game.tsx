@@ -13,8 +13,9 @@ import PlayerStrip, { StripButton, type StripTone } from "../components/PlayerSt
 import NamePrompt from "../components/NamePrompt";
 import GameOverDialog from "../components/GameOverDialog";
 import { UndoNotice, UndoPendingBar, UndoRequestDialog } from "../components/UndoOverlay";
-import { saveChosenCountry, useNationality } from "../components/NationalityBadge";
+import { useNationality } from "../components/NationalityBadge";
 import PausedOverlay from "../components/PausedOverlay";
+import { readName, saveProfile } from "../lib/identity";
 
 // Dev tools panel. import.meta.env.DEV is false in production builds, so the
 // import below is dropped and the panel's code never reaches the bundle.
@@ -33,7 +34,6 @@ const MIN_SIDE_STACKED = 220;       // side panels under the board (portrait)
 const RAIL_H_STACKED = 44;
 
 const PANELS_KEY = "chess.panels";
-const NAME_KEY = "chess.name";
 
 function readPanels(): { moves: boolean; chat: boolean } {
   try {
@@ -43,13 +43,6 @@ function readPanels(): { moves: boolean; chat: boolean } {
     /* ignore */
   }
   return { moves: true, chat: true };
-}
-function readName(): string {
-  try {
-    return localStorage.getItem(NAME_KEY) || "";
-  } catch {
-    return "";
-  }
 }
 
 // ---- Material ----
@@ -99,12 +92,7 @@ export default function Game() {
   // ---------- Name prompt ----------
   const [needName, setNeedName] = useState(true);
   const submitProfile = (profile: Profile) => {
-    try {
-      localStorage.setItem(NAME_KEY, profile.name);
-    } catch {
-      /* ignore */
-    }
-    if (profile.country?.code !== nationality?.code) saveChosenCountry(profile.country);
+    saveProfile(profile, nationality);
     game.setProfile(profile);
     setNeedName(false);
   };
